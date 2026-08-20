@@ -569,7 +569,7 @@ export default function Home() {
       </div>
 
       {view === "console" ? (
-        <section className="mx-auto grid max-w-7xl gap-5 px-5 py-5 lg:grid-cols-[minmax(0,3fr)_minmax(240px,1fr)]">
+        <section className="mx-auto max-w-5xl px-5 py-5">
           <Panel title="Instructor Console">
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
               <div>
@@ -636,9 +636,6 @@ export default function Home() {
                 compact
               />
             </div>
-          </Panel>
-          <Panel title="Current Class">
-            <CurrentClassCard activeCourse={activeCourse} activeExercise={activeExercise} compact />
           </Panel>
         </section>
       ) : view === "projection" ? (
