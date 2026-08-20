@@ -266,7 +266,7 @@ function getDefaultExerciseId(courseId: string, date = new Date()) {
 
 const emailPattern = /^[^\s@]+@[^@\s]+\.[^@\s]+$/i;
 const usernamePattern = /^[a-z0-9._-]+$/i;
-const allowedTokenBuckets = 7;
+const allowedTokenBuckets = 20;
 const tickMs = 45_000;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -325,8 +325,9 @@ function makeToken(session: Session, now: number) {
 
 function isRecentToken(session: Session, tokenToCheck: string, now: number) {
   const currentBucket = Math.floor(now / tickMs);
+  const normalizedToken = tokenToCheck.toUpperCase();
   return Array.from({ length: allowedTokenBuckets }, (_, index) => makeTokenForBucket(session, currentBucket - index)).includes(
-    tokenToCheck.toUpperCase(),
+    normalizedToken,
   );
 }
 
@@ -542,12 +543,12 @@ export default function Home() {
       setMessage("This session is not active.");
       return;
     }
-    const expectedToken = makeToken(session, Date.now());
     const urlToken = urlParams.get("token");
     if (urlToken && !isRecentToken(session, urlToken, Date.now())) {
       setMessage("This QR code has expired. Scan the current code.");
       return;
     }
+    const submittedToken = urlToken?.toUpperCase() ?? makeToken(session, Date.now());
     const existing = supabase ? await loadRemoteSubmissions() : loadSubmissions();
     if (existing.some((item) => item.sessionId === session.id && item.email === cleanEmail)) {
       setMessage("You already submitted for this session.");
@@ -562,7 +563,7 @@ export default function Home() {
       name: isEnrolled ? student?.name ?? "Roster match" : "Unmatched roster",
       matched: isEnrolled,
       signedAt: new Date().toISOString(),
-      token: expectedToken,
+      token: submittedToken,
       answer: activeExercise.hasQuestion ? answer.trim() : "",
       userAgent: navigator.userAgent,
       ipStatus: "Captured after API deployment",
