@@ -266,7 +266,7 @@ function getDefaultExerciseId(courseId: string, date = new Date()) {
 
 const emailPattern = /^[^\s@]+@[^@\s]+\.[^@\s]+$/i;
 const usernamePattern = /^[a-z0-9._-]+$/i;
-const allowedTokenBuckets = 20;
+const allowedTokenBuckets = 3;
 const tickMs = 45_000;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
