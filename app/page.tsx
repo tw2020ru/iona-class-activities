@@ -191,6 +191,7 @@ const tickMs = 45_000;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+const publicSiteUrl = "https://iona-class-activities.vercel.app";
 
 function loadSubmissions() {
   if (typeof window === "undefined") return [];
@@ -378,7 +379,7 @@ export default function Home() {
   const joinUrl =
     typeof window === "undefined"
       ? ""
-      : `${window.location.origin}${window.location.pathname}?student=1&session=${session.id}&exercise=${activeExercise.id}&token=${token}`;
+      : `${publicSiteUrl}${window.location.pathname}?student=1&session=${session.id}&exercise=${activeExercise.id}&token=${token}`;
   const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(joinUrl)}`;
 
   const sessionRows = useMemo(
