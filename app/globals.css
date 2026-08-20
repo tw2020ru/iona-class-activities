@@ -256,6 +256,20 @@ body {
   color: #ffffff;
 }
 
+.dashboard-layout {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 1024px) {
+  .dashboard-layout {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  }
+
+  .dashboard-layout.reversed {
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  }
+}
+
 button,
 input,
 select,
@@ -275,6 +289,30 @@ textarea {
 .field:focus {
   border-color: var(--iona-maroon);
   box-shadow: 0 0 0 3px rgba(111, 44, 62, 0.16);
+}
+
+.email-entry {
+  display: flex;
+  min-height: 44px;
+}
+
+.email-entry-input {
+  min-width: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.email-entry-suffix {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--iona-gray-mid);
+  border-left: 0;
+  border-radius: 0 6px 6px 0;
+  background: #faf7ef;
+  color: var(--iona-gray-dark);
+  font-weight: 650;
+  padding: 0 0.75rem;
+  white-space: nowrap;
 }
 
 .primary-button,

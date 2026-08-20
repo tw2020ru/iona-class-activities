@@ -265,6 +265,7 @@ function getDefaultExerciseId(courseId: string, date = new Date()) {
 }
 
 const emailPattern = /^[^\s@]+@(iona\.edu|gaels\.iona\.edu)$/i;
+const usernamePattern = /^[a-z0-9._-]+$/i;
 const tickMs = 45_000;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -320,6 +321,13 @@ function makeToken(session: Session, now: number) {
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+function normalizeStudentEmail(value: string) {
+  const cleanValue = value.trim().toLowerCase();
+  if (!cleanValue) return "";
+  if (cleanValue.includes("@")) return cleanValue;
+  return `${cleanValue}@gaels.iona.edu`;
 }
 
 function getStudent(email: string) {
@@ -500,9 +508,10 @@ export default function Home() {
   }
 
   async function submitStudent() {
-    const cleanEmail = normalizeEmail(email);
-    if (!emailPattern.test(cleanEmail)) {
-      setMessage("Use an @iona.edu or @gaels.iona.edu email.");
+    const cleanEmail = normalizeStudentEmail(email);
+    const username = cleanEmail.split("@")[0] ?? "";
+    if (!emailPattern.test(cleanEmail) || !usernamePattern.test(username)) {
+      setMessage("Enter your Gaels email username, such as sacheson1.");
       return;
     }
     if (activeExercise.hasQuestion && !answer.trim()) {
@@ -695,9 +704,6 @@ export default function Home() {
                   <button className="primary-button session-action-bar" onClick={startSession}>
                     Start session
                   </button>
-                  <button className="secondary-button session-secondary-row" onClick={() => downloadCsv(sessionRows, session)}>
-                    Export CSV
-                  </button>
                 </div>
               </div>
               <QrBlock
@@ -711,7 +717,7 @@ export default function Home() {
           </Panel>
         </section>
       ) : view === "projection" ? (
-        <section className="mx-auto grid max-w-7xl gap-5 px-5 py-5 lg:grid-cols-[minmax(260px,0.72fr)_minmax(0,2.28fr)]">
+        <section className="dashboard-layout reversed mx-auto grid max-w-7xl items-stretch gap-5 px-5 py-5">
           <Panel title="Session QR">
             <QrBlock
               joinUrl={joinUrl}
@@ -720,8 +726,8 @@ export default function Home() {
               token={token}
             />
           </Panel>
-          <div className="space-y-5">
-            <Panel title="Class Activity">
+          <div className="flex h-full flex-col gap-5">
+            <Panel>
               <CurrentClassCard activeCourse={activeCourse} activeExercise={activeExercise} />
               <div className="mt-4 rounded-md border border-[#e0e1dd] bg-[#faf7ef] p-5">
                 {activeExercise.hasQuestion ? (
@@ -731,19 +737,24 @@ export default function Home() {
                   </>
                 ) : (
                   <>
-                    <p className="mt-2 text-2xl font-semibold">Scan the QR code and check in with your Iona email.</p>
+                    <p className="mt-2 text-2xl font-semibold">Scan the QR code and check in with your Gaels email username.</p>
                   </>
                 )}
               </div>
             </Panel>
-            <Panel title="Class Response Results">
+            <Panel title="Class Response Results" className="flex-1">
               <ResponseResults activeExercise={activeExercise} activeQuestion={activeQuestion} rows={sessionRows} />
             </Panel>
           </div>
         </section>
       ) : (
-        <section className="mx-auto grid max-w-7xl gap-5 px-5 py-5 lg:grid-cols-[1.2fr_0.8fr]">
+        <section className="dashboard-layout mx-auto grid max-w-7xl gap-5 px-5 py-5">
           <Panel title="Live Submissions">
+            <div className="mb-4 flex justify-end">
+              <button className="secondary-button px-4" onClick={() => downloadCsv(sessionRows, session)}>
+                Export CSV
+              </button>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] border-collapse text-sm">
                 <thead>
@@ -808,9 +819,9 @@ export default function Home() {
   );
 }
 
-function Panel({ title, children }: { title?: string; children: React.ReactNode }) {
+function Panel({ title, children, className = "" }: { title?: string; children: React.ReactNode; className?: string }) {
   return (
-    <section className="rounded-lg border border-[#e0e1dd] bg-white p-4 shadow-sm">
+    <section className={`rounded-lg border border-[#e0e1dd] bg-white p-4 shadow-sm ${className}`}>
       {title ? <h2 className="mb-4 text-lg font-semibold">{title}</h2> : null}
       {children}
     </section>
@@ -834,7 +845,6 @@ function CurrentClassCard({
     <div className="student-course-banner rounded-md p-4 text-white">
       <h2 className={compact ? "text-2xl font-semibold" : "text-3xl font-semibold"}>{activeCourse.code}</h2>
       <p className="mt-1 text-sm text-[#f3ebe0]">{activeCourse.title}</p>
-      <p className="mt-1 text-xs text-[#f6dfaa]">{activeCourse.meeting}</p>
       <div className="mt-4 rounded-md bg-white/10 p-3">
         <p className="text-sm font-semibold">{activeExercise.label}</p>
         <p className="text-xs text-[#f6dfaa]">{activeExercise.dateHint}</p>
@@ -862,17 +872,31 @@ function QrBlock({
   return (
     <div className={blockClass}>
       <div className={cardClass}>
+        {compact ? (
+          <div className="mb-3 flex items-center justify-between gap-3 text-xs text-[#565a5c]">
+            <p>Refreshes in {secondsLeft}s.</p>
+            <span className="qr-link-help">
+              <a className="qr-link-button" href={joinUrl} aria-label="Open student link">
+                Student link
+              </a>
+              <span className="qr-link-panel" role="tooltip">
+                {joinUrl}
+              </span>
+            </span>
+          </div>
+        ) : null}
         <img
-          className={compact ? "mx-auto aspect-square w-full max-w-[320px]" : "mx-auto aspect-square w-full max-w-[260px]"}
+          className={compact ? "mx-auto aspect-square w-full max-w-[320px]" : "mx-auto aspect-square w-full max-w-[360px]"}
           src={qrSrc}
           alt="Dynamic session QR code"
         />
-        <div className="mt-auto grid gap-3">
+        <div className="mt-auto pt-5">
           <div className="session-action-bar flex items-center justify-center gap-3 rounded-md bg-[#6f2c3e] px-4 text-white">
             <span className="text-base font-bold">Live token</span>
             <strong className="font-mono text-base font-bold">{token}</strong>
           </div>
-          <div className="session-secondary-row flex items-center justify-between gap-3 text-xs text-[#565a5c]">
+          {!compact ? (
+          <div className="mt-3 flex items-center justify-between gap-3 text-xs text-[#565a5c]">
             <p>Current code refreshes in {secondsLeft}s.</p>
             <span className="qr-link-help">
               <a className="qr-link-button" href={joinUrl} aria-label="Open student link">
@@ -883,6 +907,7 @@ function QrBlock({
               </span>
             </span>
           </div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -980,13 +1005,18 @@ function StudentActivityCard({
 
       <div className="mt-4 space-y-3">
         <label className="space-y-1 text-sm">
-          <span className="font-medium">Iona email</span>
-          <input
-            className="field"
-            placeholder="name@iona.edu"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-          />
+          <span className="font-medium">Gaels email username</span>
+          <div className="email-entry">
+            <input
+              className="field email-entry-input"
+              placeholder="sacheson1"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              autoCapitalize="none"
+              autoCorrect="off"
+            />
+            <span className="email-entry-suffix">@gaels.iona.edu</span>
+          </div>
         </label>
 
         {activeExercise.hasQuestion ? (
