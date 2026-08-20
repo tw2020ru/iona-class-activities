@@ -373,10 +373,12 @@ export default function Home() {
   const activeQuestion = activeExercise.question;
   const token = makeToken(session, now);
   const secondsLeft = tickMs / 1000 - Math.floor((now % tickMs) / 1000);
+  const isStudentMode =
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("student") === "1";
   const joinUrl =
     typeof window === "undefined"
       ? ""
-      : `${window.location.origin}${window.location.pathname}?session=${session.id}&exercise=${activeExercise.id}&token=${token}`;
+      : `${window.location.origin}${window.location.pathname}?student=1&session=${session.id}&exercise=${activeExercise.id}&token=${token}`;
   const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(joinUrl)}`;
 
   const sessionRows = useMemo(
@@ -483,6 +485,30 @@ export default function Home() {
     }
     setMessage(isEnrolled ? "Submitted. You are checked in." : "Submitted as unmatched. Instructor can review.");
     setAnswer("");
+  }
+
+  if (isStudentMode) {
+    return (
+      <main className="brand-shell min-h-screen px-4 py-5 text-[#232629]">
+        <section className="mx-auto max-w-2xl">
+          <div className="mb-4 flex items-center gap-2 text-sm font-bold uppercase text-[#6f2c3e]">
+            <span className="brand-knot">I</span>
+            <span>Iona Class Activity</span>
+          </div>
+          <StudentActivityCard
+            activeCourse={activeCourse}
+            activeExercise={activeExercise}
+            activeQuestion={activeQuestion}
+            email={email}
+            answer={answer}
+            message={message}
+            setEmail={setEmail}
+            setAnswer={setAnswer}
+            submitStudent={submitStudent}
+          />
+        </section>
+      </main>
+    );
   }
 
   return (
@@ -622,59 +648,17 @@ export default function Home() {
 
         <div className="space-y-5">
           <Panel title="Student Activity Page Preview">
-            <div className="student-course-banner rounded-md p-4 text-white">
-              <p className="text-sm text-[#f6dfaa]">Current class</p>
-              <h2 className="mt-1 text-3xl font-semibold">{activeCourse.code}</h2>
-              <p className="mt-1 text-sm text-[#f3ebe0]">{activeCourse.title}</p>
-              <p className="mt-1 text-xs text-[#f6dfaa]">{activeCourse.meeting}</p>
-              <div className="mt-4 rounded-md bg-white/10 p-3">
-                <p className="text-sm font-semibold">{activeExercise.label}</p>
-                <p className="text-xs text-[#f6dfaa]">
-                  {activeExercise.dateHint} · {activeExercise.activityName}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <label className="space-y-1 text-sm">
-                <span className="font-medium">Iona email</span>
-                <input
-                  className="field"
-                  placeholder="name@iona.edu"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                />
-              </label>
-
-              <div className="rounded-md border border-[#e0e1dd] p-3">
-                <p className="text-sm font-semibold">{activeQuestion.prompt}</p>
-                {activeQuestion.type === "choice" ? (
-                  <div className="mt-3 grid gap-2">
-                    {activeQuestion.options?.map((option) => (
-                      <button
-                        key={option}
-                        className={answer === option ? "answer-button selected" : "answer-button"}
-                        onClick={() => setAnswer(option)}
-                      >
-                        {option}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <textarea
-                    className="field mt-3 min-h-28"
-                    placeholder="Type a short response"
-                    value={answer}
-                    onChange={(event) => setAnswer(event.target.value)}
-                  />
-                )}
-              </div>
-
-              <button className="primary-button w-full" onClick={submitStudent}>
-                Check in and submit
-              </button>
-              {message ? <p className="rounded-md bg-[#fff7e3] p-3 text-sm text-[#6f2c3e]">{message}</p> : null}
-            </div>
+            <StudentActivityCard
+              activeCourse={activeCourse}
+              activeExercise={activeExercise}
+              activeQuestion={activeQuestion}
+              email={email}
+              answer={answer}
+              message={message}
+              setEmail={setEmail}
+              setAnswer={setAnswer}
+              submitStudent={submitStudent}
+            />
           </Panel>
 
           {view === "console" ? (
@@ -782,6 +766,86 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
       <h2 className="mb-4 text-lg font-semibold">{title}</h2>
       {children}
     </section>
+  );
+}
+
+function StudentActivityCard({
+  activeCourse,
+  activeExercise,
+  activeQuestion,
+  email,
+  answer,
+  message,
+  setEmail,
+  setAnswer,
+  submitStudent,
+}: {
+  activeCourse: Course;
+  activeExercise: Exercise;
+  activeQuestion: Question;
+  email: string;
+  answer: string;
+  message: string;
+  setEmail: (value: string) => void;
+  setAnswer: (value: string) => void;
+  submitStudent: () => void;
+}) {
+  return (
+    <>
+      <div className="student-course-banner rounded-md p-4 text-white">
+        <p className="text-sm text-[#f6dfaa]">Current class</p>
+        <h2 className="mt-1 text-3xl font-semibold">{activeCourse.code}</h2>
+        <p className="mt-1 text-sm text-[#f3ebe0]">{activeCourse.title}</p>
+        <p className="mt-1 text-xs text-[#f6dfaa]">{activeCourse.meeting}</p>
+        <div className="mt-4 rounded-md bg-white/10 p-3">
+          <p className="text-sm font-semibold">{activeExercise.label}</p>
+          <p className="text-xs text-[#f6dfaa]">
+            {activeExercise.dateHint} · {activeExercise.activityName}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Iona email</span>
+          <input
+            className="field"
+            placeholder="name@iona.edu"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </label>
+
+        <div className="rounded-md border border-[#e0e1dd] p-3">
+          <p className="text-sm font-semibold">{activeQuestion.prompt}</p>
+          {activeQuestion.type === "choice" ? (
+            <div className="mt-3 grid gap-2">
+              {activeQuestion.options?.map((option) => (
+                <button
+                  key={option}
+                  className={answer === option ? "answer-button selected" : "answer-button"}
+                  onClick={() => setAnswer(option)}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <textarea
+              className="field mt-3 min-h-28"
+              placeholder="Type a short response"
+              value={answer}
+              onChange={(event) => setAnswer(event.target.value)}
+            />
+          )}
+        </div>
+
+        <button className="primary-button w-full" onClick={submitStudent}>
+          Check in and submit
+        </button>
+        {message ? <p className="rounded-md bg-[#fff7e3] p-3 text-sm text-[#6f2c3e]">{message}</p> : null}
+      </div>
+    </>
   );
 }
 
