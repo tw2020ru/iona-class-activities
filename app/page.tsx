@@ -311,7 +311,7 @@ function downloadCsv(rows: Submission[], activeSession: Session) {
 export default function Home() {
   const [selectedCourseId, setSelectedCourseId] = useState(courses[0].id);
   const [selectedExerciseId, setSelectedExerciseId] = useState(exercises[0].id);
-  const [view, setView] = useState<"console" | "projection">("console");
+  const [view, setView] = useState<"console" | "projection" | "backend">("console");
   const [session, setSession] = useState<Session>(() => ({
     id: crypto.randomUUID(),
     courseId: courses[0].id,
@@ -562,20 +562,17 @@ export default function Home() {
           >
             Projection
           </button>
+          <button className={view === "backend" ? "view-tab active" : "view-tab"} onClick={() => setView("backend")}>
+            Backend
+          </button>
         </div>
       </div>
 
-      <section
-        className={
-          view === "console"
-            ? "mx-auto grid max-w-7xl gap-5 px-5 py-5 lg:grid-cols-[1.15fr_0.85fr]"
-            : "mx-auto grid max-w-7xl gap-5 px-5 py-5 lg:grid-cols-[minmax(260px,0.72fr)_minmax(0,2.28fr)]"
-        }
-      >
-        <aside className="space-y-5">
-          <Panel title={view === "console" ? "Instructor Console" : "Session QR"}>
-            {view === "console" ? (
-              <>
+      {view === "console" ? (
+        <section className="mx-auto grid max-w-7xl gap-5 px-5 py-5 lg:grid-cols-[minmax(0,3fr)_minmax(240px,1fr)]">
+          <Panel title="Instructor Console">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+              <div>
                 <div className="course-strip compact mb-4">
                   <div>
                     <p className="text-xs font-semibold uppercase text-[#6f2c3e]">{activeCourse.discipline}</p>
@@ -587,7 +584,7 @@ export default function Home() {
                     <p className="text-xs text-[#565a5c]">{activeCourse.theme}</p>
                   </div>
                 </div>
-                <div className="grid gap-3">
+                <div className="grid gap-3 md:grid-cols-2">
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">Course</span>
                     <select
@@ -615,147 +612,109 @@ export default function Home() {
                     >
                       {selectedCourseExercises.map((exercise) => (
                         <option key={exercise.id} value={exercise.id}>
-                          {exercise.label} · {exercise.activityName}
+                          {exercise.label} · {exercise.hasQuestion ? exercise.activityName : "Attendance only"}
                         </option>
                       ))}
                     </select>
                   </label>
-                  <div className="grid gap-2">
-                    <button className="primary-button" onClick={startSession}>
-                      Start session
-                    </button>
-                    <button className="secondary-button" onClick={() => downloadCsv(sessionRows, session)}>
-                      Export CSV
-                    </button>
-                  </div>
                 </div>
-              </>
-            ) : (
-              <div className="rounded-md bg-[#faf7ef] p-3">
-                <p className="text-sm font-semibold">{activeCourse.code}</p>
-                <p className="mt-1 text-xs text-[#565a5c]">{activeExercise.label}</p>
-              </div>
-            )}
-
-            <div className="mt-5 grid gap-4">
-              <div className="qr-card rounded-md p-4">
-                <img className="mx-auto aspect-square w-full max-w-[240px]" src={qrSrc} alt="Dynamic session QR code" />
-                <div className="mt-3 flex items-center justify-between rounded-md bg-[#6f2c3e] px-3 py-2 text-white">
-                  <span className="text-xs uppercase">Live token</span>
-                  <strong className="font-mono text-xl">{token}</strong>
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  <button className="primary-button" onClick={startSession}>
+                    Start session
+                  </button>
+                  <button className="secondary-button" onClick={() => downloadCsv(sessionRows, session)}>
+                    Export CSV
+                  </button>
                 </div>
-                <p className="mt-2 text-xs text-[#565a5c]">
-                  QR changes with the token. Current code refreshes in {secondsLeft}s.
-                </p>
-                <a className="mt-2 block break-all text-xs font-semibold text-[#6f2c3e]" href={joinUrl}>
-                  {joinUrl}
-                </a>
               </div>
-              <div className="rounded-md bg-[#faf7ef] p-3">
-                <p className="text-sm font-semibold">QR target</p>
-                <p className="mt-1 text-base">{activeExercise.label}</p>
-                <p className="mt-1 text-xs text-[#565a5c]">
-                  {activeExercise.dateHint} · {activeExercise.activityName}
-                </p>
-              </div>
+              <QrBlock
+                activeExercise={activeExercise}
+                joinUrl={joinUrl}
+                qrSrc={qrSrc}
+                secondsLeft={secondsLeft}
+                token={token}
+                compact
+              />
             </div>
           </Panel>
-        </aside>
-
-        <div className="space-y-5">
-          <Panel title="Student Activity Page Preview">
-            <StudentActivityCard
-              activeCourse={activeCourse}
+          <Panel title="Current Class">
+            <CurrentClassCard activeCourse={activeCourse} activeExercise={activeExercise} compact />
+          </Panel>
+        </section>
+      ) : view === "projection" ? (
+        <section className="mx-auto grid max-w-7xl gap-5 px-5 py-5 lg:grid-cols-[minmax(260px,0.72fr)_minmax(0,2.28fr)]">
+          <Panel title="Session QR">
+            <QrBlock
               activeExercise={activeExercise}
-              activeQuestion={activeQuestion}
-              email={email}
-              answer={answer}
-              message={message}
-              setEmail={setEmail}
-              setAnswer={setAnswer}
-              submitStudent={submitStudent}
+              joinUrl={joinUrl}
+              qrSrc={qrSrc}
+              secondsLeft={secondsLeft}
+              token={token}
             />
           </Panel>
-
-          {view === "console" ? (
-            <Panel title="Live Submissions">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] border-collapse text-sm">
-                  <thead>
-                    <tr className="border-b border-[#e0e1dd] text-left text-[#565a5c]">
-                      <th className="py-2 pr-3">Time</th>
-                      <th className="py-2 pr-3">Email</th>
-                      <th className="py-2 pr-3">Name</th>
-                      <th className="py-2 pr-3">Answer</th>
-                      <th className="py-2 pr-3">Roster</th>
-                      <th className="py-2 pr-3">IP</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sessionRows.map((row) => (
-                      <tr key={row.id} className="border-b border-[#e0e1dd]">
-                        <td className="py-2 pr-3">{new Date(row.signedAt).toLocaleTimeString()}</td>
-                        <td className="py-2 pr-3">{row.email}</td>
-                        <td className="py-2 pr-3">{row.name}</td>
-                        <td className="py-2 pr-3">{row.answer}</td>
-                        <td className="py-2 pr-3">{row.matched ? "Matched" : "Review"}</td>
-                        <td className="py-2 pr-3 text-[#565a5c]">{row.ipStatus}</td>
-                      </tr>
-                    ))}
-                    {!sessionRows.length ? (
-                      <tr>
-                        <td className="py-8 text-center text-[#565a5c]" colSpan={6}>
-                          Waiting for student scans.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
-            </Panel>
-          ) : null}
-          <Panel title="Class Response Results">
-            {!activeExercise.hasQuestion ? (
-              <div className="rounded-md bg-[#faf7ef] p-5">
-                <p className="text-sm font-semibold text-[#6f2c3e]">Attendance only</p>
-                <p className="mt-2 text-3xl font-semibold">{sessionRows.length}</p>
-                <p className="text-sm text-[#565a5c]">students checked in for this session</p>
-              </div>
-            ) : activeQuestion.type === "choice" ? (
-              <div className="grid gap-3 md:grid-cols-2">
-                {activeQuestion.options?.map((option) => {
-                  const votes = sessionRows.filter((row) => row.answer === option).length;
-                  const share = sessionRows.length ? (votes / sessionRows.length) * 100 : 0;
-                  return (
-                    <div key={option} className="rounded-md border border-[#e0e1dd] bg-[#faf7ef] p-4">
-                      <div className="flex items-center justify-between gap-4">
-                        <p className="text-base font-semibold">{option}</p>
-                        <p className="text-2xl font-semibold text-[#6f2c3e]">{votes}</p>
-                      </div>
-                      <div className="mt-3 h-3 rounded bg-[#e0e1dd]">
-                        <div className="h-3 rounded bg-[#6f2c3e]" style={{ width: `${share}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="grid gap-2 md:grid-cols-2">
-                {sessionRows.length ? (
-                  sessionRows.slice(0, 8).map((row, index) => (
-                    <div key={row.id} className="rounded-md border border-[#e0e1dd] bg-[#faf7ef] p-3 text-sm">
-                      <p className="text-xs font-semibold text-[#6f2c3e]">Response {index + 1}</p>
-                      <p className="mt-1">{row.answer}</p>
-                    </div>
-                  ))
+          <div className="space-y-5">
+            <Panel title="Class Activity">
+              <CurrentClassCard activeCourse={activeCourse} activeExercise={activeExercise} />
+              <div className="mt-4 rounded-md border border-[#e0e1dd] bg-[#faf7ef] p-5">
+                {activeExercise.hasQuestion ? (
+                  <>
+                    <p className="text-sm font-semibold text-[#6f2c3e]">Prompt</p>
+                    <p className="mt-2 text-2xl font-semibold">{activeQuestion.prompt}</p>
+                  </>
                 ) : (
-                  <p className="rounded-md bg-[#faf7ef] p-4 text-sm text-[#565a5c]">Waiting for responses.</p>
+                  <>
+                    <p className="text-sm font-semibold text-[#6f2c3e]">Attendance only</p>
+                    <p className="mt-2 text-2xl font-semibold">Scan the QR code and check in with your Iona email.</p>
+                  </>
                 )}
               </div>
-            )}
+            </Panel>
+            <Panel title="Class Response Results">
+              <ResponseResults activeExercise={activeExercise} activeQuestion={activeQuestion} rows={sessionRows} />
+            </Panel>
+          </div>
+        </section>
+      ) : (
+        <section className="mx-auto grid max-w-7xl gap-5 px-5 py-5 lg:grid-cols-[1.2fr_0.8fr]">
+          <Panel title="Live Submissions">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-[#e0e1dd] text-left text-[#565a5c]">
+                    <th className="py-2 pr-3">Time</th>
+                    <th className="py-2 pr-3">Email</th>
+                    <th className="py-2 pr-3">Name</th>
+                    <th className="py-2 pr-3">Answer</th>
+                    <th className="py-2 pr-3">Roster</th>
+                    <th className="py-2 pr-3">IP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessionRows.map((row) => (
+                    <tr key={row.id} className="border-b border-[#e0e1dd]">
+                      <td className="py-2 pr-3">{new Date(row.signedAt).toLocaleTimeString()}</td>
+                      <td className="py-2 pr-3">{row.email}</td>
+                      <td className="py-2 pr-3">{row.name}</td>
+                      <td className="py-2 pr-3">{row.answer}</td>
+                      <td className="py-2 pr-3">{row.matched ? "Matched" : "Review"}</td>
+                      <td className="py-2 pr-3 text-[#565a5c]">{row.ipStatus}</td>
+                    </tr>
+                  ))}
+                  {!sessionRows.length ? (
+                    <tr>
+                      <td className="py-8 text-center text-[#565a5c]" colSpan={6}>
+                        Waiting for student scans.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
           </Panel>
-
-          {view === "console" ? (
+          <div className="space-y-5">
+            <Panel title="Class Response Results">
+              <ResponseResults activeExercise={activeExercise} activeQuestion={activeQuestion} rows={sessionRows} />
+            </Panel>
             <Panel title="Roster Matching">
               <div className="space-y-2">
                 {enrolled.map((student) => {
@@ -775,9 +734,9 @@ export default function Home() {
                 })}
               </div>
             </Panel>
-          ) : null}
-        </div>
-      </section>
+          </div>
+        </section>
+      )}
     </main>
   );
 }
@@ -788,6 +747,131 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
       <h2 className="mb-4 text-lg font-semibold">{title}</h2>
       {children}
     </section>
+  );
+}
+
+function CurrentClassCard({
+  activeCourse,
+  activeExercise,
+  compact = false,
+}: {
+  activeCourse: Course;
+  activeExercise: Exercise;
+  compact?: boolean;
+}) {
+  return (
+    <div className="student-course-banner rounded-md p-4 text-white">
+      <p className="text-sm text-[#f6dfaa]">Current class</p>
+      <h2 className={compact ? "mt-1 text-2xl font-semibold" : "mt-1 text-3xl font-semibold"}>{activeCourse.code}</h2>
+      <p className="mt-1 text-sm text-[#f3ebe0]">{activeCourse.title}</p>
+      <p className="mt-1 text-xs text-[#f6dfaa]">{activeCourse.meeting}</p>
+      <div className="mt-4 rounded-md bg-white/10 p-3">
+        <p className="text-sm font-semibold">{activeExercise.label}</p>
+        <p className="text-xs text-[#f6dfaa]">
+          {activeExercise.dateHint} · {activeExercise.hasQuestion ? activeExercise.activityName : "Attendance only"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function QrBlock({
+  activeExercise,
+  joinUrl,
+  qrSrc,
+  secondsLeft,
+  token,
+  compact = false,
+}: {
+  activeExercise: Exercise;
+  joinUrl: string;
+  qrSrc: string;
+  secondsLeft: number;
+  token: string;
+  compact?: boolean;
+}) {
+  return (
+    <div className="grid gap-4">
+      <div className="qr-card rounded-md p-4">
+        <img
+          className={compact ? "mx-auto aspect-square w-full max-w-[220px]" : "mx-auto aspect-square w-full max-w-[260px]"}
+          src={qrSrc}
+          alt="Dynamic session QR code"
+        />
+        <div className="mt-3 flex items-center justify-between rounded-md bg-[#6f2c3e] px-3 py-2 text-white">
+          <span className="text-xs uppercase">Live token</span>
+          <strong className="font-mono text-xl">{token}</strong>
+        </div>
+        <p className="mt-2 text-xs text-[#565a5c]">QR changes with the token. Current code refreshes in {secondsLeft}s.</p>
+        <a className="mt-2 block break-all text-xs font-semibold text-[#6f2c3e]" href={joinUrl}>
+          {joinUrl}
+        </a>
+      </div>
+      <div className="rounded-md bg-[#faf7ef] p-3">
+        <p className="text-sm font-semibold">QR target</p>
+        <p className="mt-1 text-base">{activeExercise.label}</p>
+        <p className="mt-1 text-xs text-[#565a5c]">
+          {activeExercise.dateHint} · {activeExercise.hasQuestion ? activeExercise.activityName : "Attendance only"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ResponseResults({
+  activeExercise,
+  activeQuestion,
+  rows,
+}: {
+  activeExercise: Exercise;
+  activeQuestion: Question;
+  rows: Submission[];
+}) {
+  if (!activeExercise.hasQuestion) {
+    return (
+      <div className="rounded-md bg-[#faf7ef] p-5">
+        <p className="text-sm font-semibold text-[#6f2c3e]">Attendance only</p>
+        <p className="mt-2 text-3xl font-semibold">{rows.length}</p>
+        <p className="text-sm text-[#565a5c]">students checked in for this session</p>
+      </div>
+    );
+  }
+
+  if (activeQuestion.type === "choice") {
+    return (
+      <div className="grid gap-3 md:grid-cols-2">
+        {activeQuestion.options?.map((option) => {
+          const votes = rows.filter((row) => row.answer === option).length;
+          const share = rows.length ? (votes / rows.length) * 100 : 0;
+          return (
+            <div key={option} className="rounded-md border border-[#e0e1dd] bg-[#faf7ef] p-4">
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-base font-semibold">{option}</p>
+                <p className="text-2xl font-semibold text-[#6f2c3e]">{votes}</p>
+              </div>
+              <div className="mt-3 h-3 rounded bg-[#e0e1dd]">
+                <div className="h-3 rounded bg-[#6f2c3e]" style={{ width: `${share}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-2 md:grid-cols-2">
+      {rows.length ? (
+        rows.slice(0, 8).map((row, index) => (
+          <div key={row.id} className="rounded-md border border-[#e0e1dd] bg-[#faf7ef] p-3 text-sm">
+            <p className="text-xs font-semibold text-[#6f2c3e]">Response {index + 1}</p>
+            <p className="mt-1">{row.answer}</p>
+          </div>
+        ))
+      ) : (
+        <p className="rounded-md bg-[#faf7ef] p-4 text-sm text-[#565a5c]">Waiting for responses.</p>
+      )}
+    </div>
   );
 }
 
