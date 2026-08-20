@@ -51,22 +51,75 @@ body {
   text-transform: uppercase;
 }
 
-.brand-knot {
+.iona-mark {
   display: inline-flex;
-  height: 32px;
-  width: 32px;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid var(--iona-gold);
-  border-radius: 50%;
-  color: var(--iona-gold);
-  font-weight: 900;
+  height: 38px;
+  width: 38px;
+  flex: 0 0 auto;
+  border-radius: 6px;
+  background: #ffffff;
+  object-fit: cover;
+  object-position: left center;
+  padding: 2px;
 }
 
 .brand-rule {
   height: 20px;
   width: 1px;
   background: rgba(255, 255, 255, 0.42);
+}
+
+.title-help {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.title-help-button {
+  display: inline-flex;
+  height: 30px;
+  width: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.title-help-button:focus-visible {
+  outline: 3px solid rgba(240, 171, 0, 0.75);
+  outline-offset: 2px;
+}
+
+.title-help-panel {
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  left: 50%;
+  z-index: 30;
+  width: min(330px, calc(100vw - 2rem));
+  transform: translateX(-50%) translateY(-0.25rem);
+  border: 1px solid var(--iona-gray);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 16px 38px rgba(35, 38, 41, 0.22);
+  color: var(--foreground);
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.45;
+  opacity: 0;
+  padding: 0.75rem 0.85rem;
+  pointer-events: none;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.title-help:hover .title-help-panel,
+.title-help:focus-within .title-help-panel {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .course-strip {
@@ -80,10 +133,93 @@ body {
   padding: 0.85rem 1rem;
 }
 
-.qr-card {
+.course-strip.compact {
+  display: grid;
+  align-items: start;
+  justify-content: stretch;
+}
+
+.course-summary {
+  width: 100%;
+}
+
+.console-controls {
+  height: 100%;
+  align-content: start;
   border: 1px solid var(--iona-gray);
   background:
     linear-gradient(180deg, #ffffff, #fbfaf6);
+}
+
+.session-action-bar {
+  height: 58px;
+  min-height: 58px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.session-secondary-row {
+  height: 58px;
+  min-height: 58px;
+}
+
+.qr-card {
+  position: relative;
+  border: 1px solid var(--iona-gray);
+  background:
+    linear-gradient(180deg, #ffffff, #fbfaf6);
+}
+
+.qr-link-help {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.qr-link-button {
+  border-radius: 999px;
+  border: 1px solid var(--iona-gray);
+  background: #ffffff;
+  color: var(--iona-maroon);
+  font-weight: 750;
+  padding: 0.25rem 0.55rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.qr-link-button:focus-visible {
+  outline: 3px solid rgba(111, 44, 62, 0.18);
+  outline-offset: 2px;
+}
+
+.qr-link-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.55rem);
+  z-index: 30;
+  width: min(340px, calc(100vw - 2rem));
+  transform: translateY(0.25rem);
+  border: 1px solid var(--iona-gray);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 16px 38px rgba(35, 38, 41, 0.18);
+  color: var(--foreground);
+  font-size: 0.75rem;
+  font-weight: 650;
+  line-height: 1.45;
+  opacity: 0;
+  overflow-wrap: anywhere;
+  padding: 0.7rem 0.8rem;
+  pointer-events: none;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.qr-link-help:hover .qr-link-panel,
+.qr-link-help:focus-within .qr-link-panel {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .student-course-banner {
@@ -213,4 +349,17 @@ textarea {
   border-color: #f5cf70;
   background: var(--iona-gold-soft);
   color: var(--iona-maroon);
+}
+
+@media (max-width: 640px) {
+  .title-help-panel {
+    right: 0;
+    left: auto;
+    transform: translateY(-0.25rem);
+  }
+
+  .title-help:hover .title-help-panel,
+  .title-help:focus-within .title-help-panel {
+    transform: translateY(0);
+  }
 }

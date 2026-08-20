@@ -8,8 +8,6 @@ type Course = {
   code: string;
   title: string;
   meeting: string;
-  discipline: string;
-  theme: string;
 };
 
 type Student = {
@@ -29,6 +27,11 @@ type Exercise = {
   id: string;
   courseId: string;
   week: number;
+  classMeeting: number;
+  meetingDate: string;
+  startsAt: string;
+  endsAt: string;
+  location: string;
   label: string;
   dateHint: string;
   activityName: string;
@@ -65,32 +68,24 @@ const courses: Course[] = [
     code: "BUS 320-F",
     title: "Operations Management Analytics",
     meeting: "Tue/Thu 3:30-4:48 PM · LaPenta Business 204/211",
-    discipline: "Business",
-    theme: "Operations dashboard",
   },
   {
     id: "course-2",
     code: "BUS 403-A",
     title: "Excel for Business",
     meeting: "Wed 2:00-2:52 PM · LaPenta 212 Trading Floor",
-    discipline: "Business",
-    theme: "Spreadsheet lab",
   },
   {
     id: "course-3",
     code: "IS 670-A",
     title: "Artificial Intelligence in Business",
     meeting: "Wed 6:30-9:30 PM · LaPenta Business 308",
-    discipline: "Graduate IS",
-    theme: "AI discussion studio",
   },
   {
     id: "course-4",
     code: "MBA 510-A",
     title: "Fundamentals of Business Analytics",
     meeting: "Tue 6:30-9:45 PM · LaPenta Business 211",
-    discipline: "MBA",
-    theme: "Analytics workshop",
   },
 ];
 
@@ -112,85 +107,162 @@ const roster: Student[] = [
   },
 ];
 
-const fallWeekHints = [
-  "Aug 24-30",
-  "Aug 31-Sep 6",
-  "Sep 7-13",
-  "Sep 14-20",
-  "Sep 21-27",
-  "Sep 28-Oct 4",
-  "Oct 5-11",
-  "Oct 12-18",
-  "Oct 19-25",
-  "Oct 26-Nov 1",
-  "Nov 2-8",
-  "Nov 9-15",
-  "Nov 16-22",
-  "Nov 23-29",
-  "Nov 30-Dec 6",
-  "Dec 7-11",
-];
-
-const exercisePlans = [
-  {
-    courseId: "course-1",
-    slug: "bus320",
-    count: 16,
+const activityDefaults = {
+  "course-1": {
     activityName: "Operations participation check",
     hasQuestion: false,
     prompt: "What is one operations decision from this week that could be measured with data?",
     type: "short" as const,
   },
-  {
-    courseId: "course-2",
-    slug: "bus403",
-    count: 16,
+  "course-2": {
     activityName: "Excel lab check",
     hasQuestion: false,
     prompt: "Which Excel skill from this week's lab do you expect to use most often?",
     type: "choice" as const,
     options: ["Tables", "Formulas", "Charts", "Data cleaning"],
   },
-  {
-    courseId: "course-3",
-    slug: "is670",
-    count: 11,
+  "course-3": {
     activityName: "AI in business reflection",
     hasQuestion: false,
     prompt: "Name one business use case where AI creates value and one risk it introduces.",
     type: "short" as const,
   },
-  {
-    courseId: "course-4",
-    slug: "mba510",
-    count: 11,
+  "course-4": {
     activityName: "Analytics workshop response",
     hasQuestion: false,
     prompt: "What is one business question that analytics can help answer?",
     type: "short" as const,
   },
+};
+
+const courseMeetingPatterns = [
+  {
+    courseId: "course-1",
+    slug: "bus320",
+    firstDate: "2026-08-25",
+    count: 16,
+    dayLabel: "Tue",
+    classMeeting: 1,
+    startTime: "15:30",
+    endTime: "16:48",
+    timeLabel: "3:30-4:48 PM",
+    location: "LaPenta Business 204",
+  },
+  {
+    courseId: "course-1",
+    slug: "bus320",
+    firstDate: "2026-08-27",
+    count: 16,
+    dayLabel: "Thu",
+    classMeeting: 2,
+    startTime: "15:30",
+    endTime: "16:48",
+    timeLabel: "3:30-4:48 PM",
+    location: "LaPenta Business 211",
+  },
+  {
+    courseId: "course-2",
+    slug: "bus403",
+    firstDate: "2026-08-26",
+    count: 16,
+    dayLabel: "Wed",
+    classMeeting: 1,
+    startTime: "14:00",
+    endTime: "14:52",
+    timeLabel: "2:00-2:52 PM",
+    location: "LaPenta 212 Trading Floor",
+  },
+  {
+    courseId: "course-3",
+    slug: "is670",
+    firstDate: "2026-08-26",
+    count: 11,
+    dayLabel: "Wed",
+    classMeeting: 1,
+    startTime: "18:30",
+    endTime: "21:30",
+    timeLabel: "6:30-9:30 PM",
+    location: "LaPenta Business 308",
+  },
+  {
+    courseId: "course-4",
+    slug: "mba510",
+    firstDate: "2026-08-25",
+    count: 11,
+    dayLabel: "Tue",
+    classMeeting: 1,
+    startTime: "18:30",
+    endTime: "21:45",
+    timeLabel: "6:30-9:45 PM",
+    location: "LaPenta Business 211",
+  },
 ];
 
-const exercises: Exercise[] = exercisePlans.flatMap((plan) =>
-  Array.from({ length: plan.count }, (_, index) => {
-    const week = index + 1;
-    return {
-      id: `${plan.slug}-w${String(week).padStart(2, "0")}`,
-      courseId: plan.courseId,
-      week,
-      label: `Week ${week} Exercise`,
-      dateHint: fallWeekHints[index],
-      activityName: plan.activityName,
-      hasQuestion: plan.hasQuestion,
-      question: {
-        id: `q-${plan.slug}-w${String(week).padStart(2, "0")}`,
-        prompt: plan.prompt,
-        type: plan.type,
-        options: plan.options,
-      },
-    };
-  }),
-);
+function addWeeks(dateKey: string, weeks: number) {
+  const date = new Date(`${dateKey}T12:00:00`);
+  date.setDate(date.getDate() + weeks * 7);
+  return date.toISOString().slice(0, 10);
+}
+
+function formatShortDate(dateKey: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "America/New_York",
+  }).format(new Date(`${dateKey}T12:00:00`));
+}
+
+function getNewYorkDateKey(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "America/New_York",
+  }).formatToParts(date);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
+const exercises: Exercise[] = courseMeetingPatterns
+  .flatMap((pattern) =>
+    Array.from({ length: pattern.count }, (_, index) => {
+      const defaults = activityDefaults[pattern.courseId as keyof typeof activityDefaults];
+      const meetingDate = addWeeks(pattern.firstDate, index);
+      const week = index + 1;
+      const classSuffix = pattern.classMeeting > 1 || pattern.courseId === "course-1" ? ` · Class ${pattern.classMeeting}` : "";
+      return {
+        id: `${pattern.slug}-w${String(week).padStart(2, "0")}-c${pattern.classMeeting}`,
+        courseId: pattern.courseId,
+        week,
+        classMeeting: pattern.classMeeting,
+        meetingDate,
+        startsAt: `${meetingDate}T${pattern.startTime}:00`,
+        endsAt: `${meetingDate}T${pattern.endTime}:00`,
+        location: pattern.location,
+        label: `Week ${week} · ${pattern.dayLabel} ${formatShortDate(meetingDate)}${classSuffix}`,
+        dateHint: `${pattern.dayLabel} ${formatShortDate(meetingDate)} · ${pattern.timeLabel} · ${pattern.location}`,
+        activityName: defaults.activityName,
+        hasQuestion: defaults.hasQuestion,
+        question: {
+          id: `q-${pattern.slug}-w${String(week).padStart(2, "0")}-c${pattern.classMeeting}`,
+          prompt: defaults.prompt,
+          type: defaults.type,
+          options: "options" in defaults ? defaults.options : undefined,
+        },
+      };
+    }),
+  )
+  .sort((first, second) => first.meetingDate.localeCompare(second.meetingDate) || first.classMeeting - second.classMeeting);
+
+function getCourseExercises(courseId: string) {
+  return exercises.filter((exercise) => exercise.courseId === courseId);
+}
+
+function getDefaultExerciseId(courseId: string, date = new Date()) {
+  const courseExercises = getCourseExercises(courseId);
+  const today = getNewYorkDateKey(date);
+  return courseExercises.find((exercise) => exercise.meetingDate >= today)?.id ?? courseExercises.at(-1)?.id ?? exercises[0].id;
+}
 
 const emailPattern = /^[^\s@]+@(iona\.edu|gaels\.iona\.edu)$/i;
 const tickMs = 45_000;
@@ -198,6 +270,8 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 const publicSiteUrl = "https://iona-class-activities.vercel.app";
+const ionaKnotSrc =
+  "https://d1ctk4ronrg3qz.cloudfront.net/admin/1659367858478_IONA-University_PrimaryStacked-LightBG.png";
 
 function loadSubmissions() {
   if (typeof window === "undefined") return [];
@@ -250,10 +324,6 @@ function normalizeEmail(email: string) {
 
 function getStudent(email: string) {
   return roster.find((student) => student.email === normalizeEmail(email));
-}
-
-function getCourseExercises(courseId: string) {
-  return exercises.filter((exercise) => exercise.courseId === courseId);
 }
 
 function downloadCsv(rows: Submission[], activeSession: Session) {
@@ -310,12 +380,12 @@ function downloadCsv(rows: Submission[], activeSession: Session) {
 
 export default function Home() {
   const [selectedCourseId, setSelectedCourseId] = useState(courses[0].id);
-  const [selectedExerciseId, setSelectedExerciseId] = useState(exercises[0].id);
+  const [selectedExerciseId, setSelectedExerciseId] = useState(() => getDefaultExerciseId(courses[0].id));
   const [view, setView] = useState<"console" | "projection" | "backend">("console");
   const [session, setSession] = useState<Session>(() => ({
     id: crypto.randomUUID(),
     courseId: courses[0].id,
-    exerciseId: exercises[0].id,
+    exerciseId: getDefaultExerciseId(courses[0].id),
     label: new Date().toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
@@ -375,6 +445,7 @@ export default function Home() {
   }, []);
 
   const selectedCourseExercises = getCourseExercises(selectedCourseId);
+  const selectedCourse = courses.find((course) => course.id === selectedCourseId) ?? courses[0];
   const activeCourse = courses.find((course) => course.id === session.courseId) ?? courses[0];
   const activeExercise = exercises.find((exercise) => exercise.id === session.exerciseId) ?? exercises[0];
   const activeQuestion = activeExercise.question;
@@ -505,7 +576,7 @@ export default function Home() {
       <main className="brand-shell min-h-screen px-4 py-5 text-[#232629]">
         <section className="mx-auto max-w-2xl">
           <div className="mb-4 flex items-center gap-2 text-sm font-bold uppercase text-[#6f2c3e]">
-            <span className="brand-knot">I</span>
+            <IonaMark />
             <span>Iona Class Activity</span>
           </div>
           <StudentActivityCard
@@ -530,18 +601,22 @@ export default function Home() {
         <div className="mx-auto flex max-w-7xl flex-col gap-5 px-5 py-6 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="brand-mark" aria-label="Iona University class activities">
-              <span className="brand-knot">I</span>
+              <IonaMark />
               <span>IONA</span>
               <span className="brand-rule" />
               <span>Class Activities</span>
             </div>
-            <h1 className="mt-3 text-3xl font-semibold tracking-normal md:text-4xl">
-              Attendance and live responses
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#f3ebe0]">
-              Instructor view stays minimal: choose a course, choose the week exercise, generate a QR link. Course, session, token, timing, and roster
-              matching are handled by the instructor side.
-            </p>
+            <div className="mt-3 flex items-center gap-3">
+              <h1 className="text-3xl font-semibold tracking-normal md:text-4xl">Attendance and live responses</h1>
+              <span className="title-help">
+                <button className="title-help-button" aria-label="About the instructor view" type="button">
+                  ?
+                </button>
+                <span className="title-help-panel" role="tooltip">
+                  Choose a course and week, generate a QR link, and let the instructor side handle session, token, timing, and roster matching.
+                </span>
+              </span>
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-2 text-center">
             <Metric label="Checked in" value={sessionRows.length} />
@@ -554,7 +629,7 @@ export default function Home() {
       <div className="mx-auto max-w-7xl px-5 pt-5">
         <div className="view-tabs" role="tablist" aria-label="Instructor view mode">
           <button className={view === "console" ? "view-tab active" : "view-tab"} onClick={() => setView("console")}>
-            Full Console
+            Session Setup
           </button>
           <button
             className={view === "projection" ? "view-tab active" : "view-tab"}
@@ -570,21 +645,19 @@ export default function Home() {
 
       {view === "console" ? (
         <section className="mx-auto max-w-7xl px-5 py-5">
-          <Panel title="Instructor Console">
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-              <div>
-                <div className="course-strip compact mb-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase text-[#6f2c3e]">{activeCourse.discipline}</p>
-                    <p className="text-lg font-semibold">{activeCourse.code}</p>
-                    <p className="text-xs text-[#565a5c]">{activeCourse.meeting}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium">{activeCourse.title}</p>
-                    <p className="text-xs text-[#565a5c]">{activeCourse.theme}</p>
+          <Panel>
+            <div className="grid items-stretch gap-5 lg:grid-cols-2">
+              <div className="console-controls flex flex-col gap-4 rounded-md p-4">
+                <div className="course-strip compact">
+                  <div className="course-summary">
+                    <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                      <span className="text-2xl font-semibold">{selectedCourse.code}</span>
+                      <span className="text-2xl font-normal">{selectedCourse.title}</span>
+                    </p>
+                    <p className="mt-1 text-sm text-[#565a5c]">{selectedCourse.meeting}</p>
                   </div>
                 </div>
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-3">
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">Course</span>
                     <select
@@ -593,7 +666,7 @@ export default function Home() {
                       onChange={(event) => {
                         const nextCourseId = event.target.value;
                         setSelectedCourseId(nextCourseId);
-                        setSelectedExerciseId(getCourseExercises(nextCourseId)[0]?.id ?? exercises[0].id);
+                        setSelectedExerciseId(getDefaultExerciseId(nextCourseId));
                       }}
                     >
                       {courses.map((course) => (
@@ -604,7 +677,7 @@ export default function Home() {
                     </select>
                   </label>
                   <label className="space-y-1 text-sm">
-                    <span className="font-medium">Week exercise</span>
+                    <span className="font-medium">Week / class meeting</span>
                     <select
                       className="field"
                       value={selectedExerciseId}
@@ -612,23 +685,22 @@ export default function Home() {
                     >
                       {selectedCourseExercises.map((exercise) => (
                         <option key={exercise.id} value={exercise.id}>
-                          {exercise.label} · {exercise.hasQuestion ? exercise.activityName : "Attendance only"}
+                          {exercise.hasQuestion ? `${exercise.label} · ${exercise.activityName}` : exercise.label}
                         </option>
                       ))}
                     </select>
                   </label>
                 </div>
-                <div className="mt-3 grid gap-2 md:grid-cols-2">
-                  <button className="primary-button" onClick={startSession}>
+                <div className="mt-auto grid gap-3">
+                  <button className="primary-button session-action-bar" onClick={startSession}>
                     Start session
                   </button>
-                  <button className="secondary-button" onClick={() => downloadCsv(sessionRows, session)}>
+                  <button className="secondary-button session-secondary-row" onClick={() => downloadCsv(sessionRows, session)}>
                     Export CSV
                   </button>
                 </div>
               </div>
               <QrBlock
-                activeExercise={activeExercise}
                 joinUrl={joinUrl}
                 qrSrc={qrSrc}
                 secondsLeft={secondsLeft}
@@ -642,7 +714,6 @@ export default function Home() {
         <section className="mx-auto grid max-w-7xl gap-5 px-5 py-5 lg:grid-cols-[minmax(260px,0.72fr)_minmax(0,2.28fr)]">
           <Panel title="Session QR">
             <QrBlock
-              activeExercise={activeExercise}
               joinUrl={joinUrl}
               qrSrc={qrSrc}
               secondsLeft={secondsLeft}
@@ -660,7 +731,6 @@ export default function Home() {
                   </>
                 ) : (
                   <>
-                    <p className="text-sm font-semibold text-[#6f2c3e]">Attendance only</p>
                     <p className="mt-2 text-2xl font-semibold">Scan the QR code and check in with your Iona email.</p>
                   </>
                 )}
@@ -738,13 +808,17 @@ export default function Home() {
   );
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function Panel({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
     <section className="rounded-lg border border-[#e0e1dd] bg-white p-4 shadow-sm">
-      <h2 className="mb-4 text-lg font-semibold">{title}</h2>
+      {title ? <h2 className="mb-4 text-lg font-semibold">{title}</h2> : null}
       {children}
     </section>
   );
+}
+
+function IonaMark() {
+  return <img className="iona-mark" src={ionaKnotSrc} alt="" aria-hidden="true" />;
 }
 
 function CurrentClassCard({
@@ -758,58 +832,58 @@ function CurrentClassCard({
 }) {
   return (
     <div className="student-course-banner rounded-md p-4 text-white">
-      <p className="text-sm text-[#f6dfaa]">Current class</p>
-      <h2 className={compact ? "mt-1 text-2xl font-semibold" : "mt-1 text-3xl font-semibold"}>{activeCourse.code}</h2>
+      <h2 className={compact ? "text-2xl font-semibold" : "text-3xl font-semibold"}>{activeCourse.code}</h2>
       <p className="mt-1 text-sm text-[#f3ebe0]">{activeCourse.title}</p>
       <p className="mt-1 text-xs text-[#f6dfaa]">{activeCourse.meeting}</p>
       <div className="mt-4 rounded-md bg-white/10 p-3">
         <p className="text-sm font-semibold">{activeExercise.label}</p>
-        <p className="text-xs text-[#f6dfaa]">
-          {activeExercise.dateHint} · {activeExercise.hasQuestion ? activeExercise.activityName : "Attendance only"}
-        </p>
+        <p className="text-xs text-[#f6dfaa]">{activeExercise.dateHint}</p>
       </div>
     </div>
   );
 }
 
 function QrBlock({
-  activeExercise,
   joinUrl,
   qrSrc,
   secondsLeft,
   token,
   compact = false,
 }: {
-  activeExercise: Exercise;
   joinUrl: string;
   qrSrc: string;
   secondsLeft: number;
   token: string;
   compact?: boolean;
 }) {
+  const blockClass = compact ? "grid h-full gap-4" : "grid gap-4";
+  const cardClass = compact ? "qr-card flex h-full flex-col rounded-md p-4" : "qr-card flex flex-col rounded-md p-4";
+
   return (
-    <div className="grid gap-4">
-      <div className="qr-card rounded-md p-4">
+    <div className={blockClass}>
+      <div className={cardClass}>
         <img
-          className={compact ? "mx-auto aspect-square w-full max-w-[220px]" : "mx-auto aspect-square w-full max-w-[260px]"}
+          className={compact ? "mx-auto aspect-square w-full max-w-[320px]" : "mx-auto aspect-square w-full max-w-[260px]"}
           src={qrSrc}
           alt="Dynamic session QR code"
         />
-        <div className="mt-3 flex items-center justify-between rounded-md bg-[#6f2c3e] px-3 py-2 text-white">
-          <span className="text-xs uppercase">Live token</span>
-          <strong className="font-mono text-xl">{token}</strong>
+        <div className="mt-auto grid gap-3">
+          <div className="session-action-bar flex items-center justify-center gap-3 rounded-md bg-[#6f2c3e] px-4 text-white">
+            <span className="text-base font-bold">Live token</span>
+            <strong className="font-mono text-base font-bold">{token}</strong>
+          </div>
+          <div className="session-secondary-row flex items-center justify-between gap-3 text-xs text-[#565a5c]">
+            <p>Current code refreshes in {secondsLeft}s.</p>
+            <span className="qr-link-help">
+              <a className="qr-link-button" href={joinUrl} aria-label="Open student link">
+                Student link
+              </a>
+              <span className="qr-link-panel" role="tooltip">
+                {joinUrl}
+              </span>
+            </span>
+          </div>
         </div>
-        <p className="mt-2 text-xs text-[#565a5c]">QR changes with the token. Current code refreshes in {secondsLeft}s.</p>
-        <a className="mt-2 block break-all text-xs font-semibold text-[#6f2c3e]" href={joinUrl}>
-          {joinUrl}
-        </a>
-      </div>
-      <div className="rounded-md bg-[#faf7ef] p-3">
-        <p className="text-sm font-semibold">QR target</p>
-        <p className="mt-1 text-base">{activeExercise.label}</p>
-        <p className="mt-1 text-xs text-[#565a5c]">
-          {activeExercise.dateHint} · {activeExercise.hasQuestion ? activeExercise.activityName : "Attendance only"}
-        </p>
       </div>
     </div>
   );
@@ -827,7 +901,6 @@ function ResponseResults({
   if (!activeExercise.hasQuestion) {
     return (
       <div className="rounded-md bg-[#faf7ef] p-5">
-        <p className="text-sm font-semibold text-[#6f2c3e]">Attendance only</p>
         <p className="mt-2 text-3xl font-semibold">{rows.length}</p>
         <p className="text-sm text-[#565a5c]">students checked in for this session</p>
       </div>
@@ -896,15 +969,12 @@ function StudentActivityCard({
   return (
     <>
       <div className="student-course-banner rounded-md p-4 text-white">
-        <p className="text-sm text-[#f6dfaa]">Current class</p>
-        <h2 className="mt-1 text-3xl font-semibold">{activeCourse.code}</h2>
+        <h2 className="text-3xl font-semibold">{activeCourse.code}</h2>
         <p className="mt-1 text-sm text-[#f3ebe0]">{activeCourse.title}</p>
         <p className="mt-1 text-xs text-[#f6dfaa]">{activeCourse.meeting}</p>
         <div className="mt-4 rounded-md bg-white/10 p-3">
           <p className="text-sm font-semibold">{activeExercise.label}</p>
-          <p className="text-xs text-[#f6dfaa]">
-            {activeExercise.dateHint} · {activeExercise.hasQuestion ? activeExercise.activityName : "Attendance only"}
-          </p>
+          <p className="text-xs text-[#f6dfaa]">{activeExercise.dateHint}</p>
         </div>
       </div>
 
