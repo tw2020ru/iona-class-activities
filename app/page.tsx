@@ -379,7 +379,7 @@ export default function Home() {
   const joinUrl =
     typeof window === "undefined"
       ? ""
-      : `${publicSiteUrl}${window.location.pathname}?student=1&session=${session.id}&exercise=${activeExercise.id}&token=${token}`;
+      : `${publicSiteUrl}/?student=1&session=${session.id}&exercise=${activeExercise.id}&token=${token}`;
   const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(joinUrl)}`;
 
   const sessionRows = useMemo(
@@ -635,6 +635,9 @@ export default function Home() {
                 <p className="mt-2 text-xs text-[#565a5c]">
                   QR changes with the token. Current code refreshes in {secondsLeft}s.
                 </p>
+                <a className="mt-2 block break-all text-xs font-semibold text-[#6f2c3e]" href={joinUrl}>
+                  {joinUrl}
+                </a>
               </div>
               <div className="rounded-md bg-[#faf7ef] p-3">
                 <p className="text-sm font-semibold">QR target</p>
