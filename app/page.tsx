@@ -264,8 +264,9 @@ function getDefaultExerciseId(courseId: string, date = new Date()) {
   return courseExercises.find((exercise) => exercise.meetingDate >= today)?.id ?? courseExercises.at(-1)?.id ?? exercises[0].id;
 }
 
-const emailPattern = /^[^\s@]+@(iona\.edu|gaels\.iona\.edu)$/i;
+const emailPattern = /^[^\s@]+@[^@\s]+\.[^@\s]+$/i;
 const usernamePattern = /^[a-z0-9._-]+$/i;
+const allowedTokenBuckets = 7;
 const tickMs = 45_000;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -309,8 +310,7 @@ async function loadRemoteSubmissions() {
   }));
 }
 
-function makeToken(session: Session, now: number) {
-  const bucket = Math.floor(now / tickMs);
+function makeTokenForBucket(session: Session, bucket: number) {
   const raw = `${session.tokenSeed}-${bucket}`;
   let hash = 0;
   for (let index = 0; index < raw.length; index += 1) {
@@ -319,15 +319,26 @@ function makeToken(session: Session, now: number) {
   return hash.toString(36).toUpperCase().slice(0, 6).padStart(6, "0");
 }
 
+function makeToken(session: Session, now: number) {
+  return makeTokenForBucket(session, Math.floor(now / tickMs));
+}
+
+function isRecentToken(session: Session, tokenToCheck: string, now: number) {
+  const currentBucket = Math.floor(now / tickMs);
+  return Array.from({ length: allowedTokenBuckets }, (_, index) => makeTokenForBucket(session, currentBucket - index)).includes(
+    tokenToCheck.toUpperCase(),
+  );
+}
+
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
-function normalizeStudentEmail(value: string) {
+function normalizeStudentEmail(value: string, domain: string) {
   const cleanValue = value.trim().toLowerCase();
   if (!cleanValue) return "";
   if (cleanValue.includes("@")) return cleanValue;
-  return `${cleanValue}@gaels.iona.edu`;
+  return `${cleanValue}@${domain}`;
 }
 
 function getStudent(email: string) {
@@ -405,6 +416,8 @@ export default function Home() {
   }));
   const [now, setNow] = useState(Date.now());
   const [email, setEmail] = useState("");
+  const [emailDomain, setEmailDomain] = useState("gaels.iona.edu");
+  const [customEmailDomain, setCustomEmailDomain] = useState("");
   const [answer, setAnswer] = useState("");
   const [message, setMessage] = useState("");
   const [submissions, setSubmissions] = useState<Submission[]>([]);
@@ -508,10 +521,17 @@ export default function Home() {
   }
 
   async function submitStudent() {
-    const cleanEmail = normalizeStudentEmail(email);
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlSessionId = urlParams.get("session");
+    if (urlSessionId && session.id !== urlSessionId) {
+      setMessage("Loading this class session. Please try again in a moment.");
+      return;
+    }
+    const selectedEmailDomain = emailDomain === "custom" ? customEmailDomain.trim().toLowerCase() : emailDomain;
+    const cleanEmail = normalizeStudentEmail(email, selectedEmailDomain);
     const username = cleanEmail.split("@")[0] ?? "";
-    if (!emailPattern.test(cleanEmail) || !usernamePattern.test(username)) {
-      setMessage("Enter your Gaels email username, such as sacheson1.");
+    if (!selectedEmailDomain || !emailPattern.test(cleanEmail) || !usernamePattern.test(username)) {
+      setMessage("Enter your email username, such as username1.");
       return;
     }
     if (activeExercise.hasQuestion && !answer.trim()) {
@@ -523,8 +543,8 @@ export default function Home() {
       return;
     }
     const expectedToken = makeToken(session, Date.now());
-    const urlToken = new URLSearchParams(window.location.search).get("token");
-    if (urlToken && urlToken !== expectedToken) {
+    const urlToken = urlParams.get("token");
+    if (urlToken && !isRecentToken(session, urlToken, Date.now())) {
       setMessage("This QR code has expired. Scan the current code.");
       return;
     }
@@ -596,6 +616,10 @@ export default function Home() {
             answer={answer}
             message={message}
             setEmail={setEmail}
+            emailDomain={emailDomain}
+            setEmailDomain={setEmailDomain}
+            customEmailDomain={customEmailDomain}
+            setCustomEmailDomain={setCustomEmailDomain}
             setAnswer={setAnswer}
             submitStudent={submitStudent}
           />
@@ -975,9 +999,13 @@ function StudentActivityCard({
   activeExercise,
   activeQuestion,
   email,
+  emailDomain,
+  customEmailDomain,
   answer,
   message,
   setEmail,
+  setEmailDomain,
+  setCustomEmailDomain,
   setAnswer,
   submitStudent,
 }: {
@@ -985,9 +1013,13 @@ function StudentActivityCard({
   activeExercise: Exercise;
   activeQuestion: Question;
   email: string;
+  emailDomain: string;
+  customEmailDomain: string;
   answer: string;
   message: string;
   setEmail: (value: string) => void;
+  setEmailDomain: (value: string) => void;
+  setCustomEmailDomain: (value: string) => void;
   setAnswer: (value: string) => void;
   submitStudent: () => void;
 }) {
@@ -1009,14 +1041,33 @@ function StudentActivityCard({
           <div className="email-entry">
             <input
               className="field email-entry-input"
-              placeholder="sacheson1"
+              placeholder="username1"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               autoCapitalize="none"
               autoCorrect="off"
             />
-            <span className="email-entry-suffix">@gaels.iona.edu</span>
+            <select
+              className="email-entry-suffix"
+              aria-label="Email domain"
+              value={emailDomain}
+              onChange={(event) => setEmailDomain(event.target.value)}
+            >
+              <option value="gaels.iona.edu">@gaels.iona.edu</option>
+              <option value="iona.edu">@iona.edu</option>
+              <option value="custom">Other</option>
+            </select>
           </div>
+          {emailDomain === "custom" ? (
+            <input
+              className="field mt-2"
+              placeholder="school.edu"
+              value={customEmailDomain}
+              onChange={(event) => setCustomEmailDomain(event.target.value)}
+              autoCapitalize="none"
+              autoCorrect="off"
+            />
+          ) : null}
         </label>
 
         {activeExercise.hasQuestion ? (

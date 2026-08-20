@@ -80,7 +80,7 @@ on public.activity_submissions
 for insert
 to anon
 with check (
-  email ~* '^[^[:space:]@]+@(iona\.edu|gaels\.iona\.edu)$'
+  email ~* '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'
 );
 
 drop policy if exists "Public read course schedule" on public.course_schedule_meetings;
