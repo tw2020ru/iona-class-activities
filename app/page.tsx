@@ -569,9 +569,9 @@ export default function Home() {
       </div>
 
       {view === "console" ? (
-        <section className="mx-auto max-w-5xl px-5 py-5">
+        <section className="mx-auto max-w-7xl px-5 py-5">
           <Panel title="Instructor Console">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
               <div>
                 <div className="course-strip compact mb-4">
                   <div>
