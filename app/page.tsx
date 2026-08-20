@@ -32,6 +32,7 @@ type Exercise = {
   label: string;
   dateHint: string;
   activityName: string;
+  hasQuestion: boolean;
   question: Question;
 };
 
@@ -136,6 +137,7 @@ const exercisePlans = [
     slug: "bus320",
     count: 16,
     activityName: "Operations participation check",
+    hasQuestion: false,
     prompt: "What is one operations decision from this week that could be measured with data?",
     type: "short" as const,
   },
@@ -144,6 +146,7 @@ const exercisePlans = [
     slug: "bus403",
     count: 16,
     activityName: "Excel lab check",
+    hasQuestion: false,
     prompt: "Which Excel skill from this week's lab do you expect to use most often?",
     type: "choice" as const,
     options: ["Tables", "Formulas", "Charts", "Data cleaning"],
@@ -153,6 +156,7 @@ const exercisePlans = [
     slug: "is670",
     count: 11,
     activityName: "AI in business reflection",
+    hasQuestion: false,
     prompt: "Name one business use case where AI creates value and one risk it introduces.",
     type: "short" as const,
   },
@@ -161,6 +165,7 @@ const exercisePlans = [
     slug: "mba510",
     count: 11,
     activityName: "Analytics workshop response",
+    hasQuestion: false,
     prompt: "What is one business question that analytics can help answer?",
     type: "short" as const,
   },
@@ -176,6 +181,7 @@ const exercises: Exercise[] = exercisePlans.flatMap((plan) =>
       label: `Week ${week} Exercise`,
       dateHint: fallWeekHints[index],
       activityName: plan.activityName,
+      hasQuestion: plan.hasQuestion,
       question: {
         id: `q-${plan.slug}-w${String(week).padStart(2, "0")}`,
         prompt: plan.prompt,
@@ -284,7 +290,7 @@ function downloadCsv(rows: Submission[], activeSession: Session) {
       row.answer,
       "1",
       row.answer.trim() ? "1" : "0",
-      row.answer.trim() ? "2" : "1",
+      String(1 + (row.answer.trim() ? 1 : 0)),
       row.ipStatus,
       row.userAgent,
     ]
@@ -428,7 +434,7 @@ export default function Home() {
       setMessage("Use an @iona.edu or @gaels.iona.edu email.");
       return;
     }
-    if (!answer.trim()) {
+    if (activeExercise.hasQuestion && !answer.trim()) {
       setMessage("Submit an answer to complete the activity.");
       return;
     }
@@ -457,7 +463,7 @@ export default function Home() {
       matched: isEnrolled,
       signedAt: new Date().toISOString(),
       token: expectedToken,
-      answer: answer.trim(),
+      answer: activeExercise.hasQuestion ? answer.trim() : "",
       userAgent: navigator.userAgent,
       ipStatus: "Captured after API deployment",
     };
@@ -484,7 +490,13 @@ export default function Home() {
       saveSubmissions(next);
       setSubmissions(next);
     }
-    setMessage(isEnrolled ? "Submitted. You are checked in." : "Submitted as unmatched. Instructor can review.");
+    setMessage(
+      isEnrolled
+        ? activeExercise.hasQuestion
+          ? "Submitted. You are checked in and your response was saved."
+          : "Checked in. Attendance recorded."
+        : "Submitted as unmatched. Instructor can review.",
+    );
     setAnswer("");
   }
 
@@ -703,7 +715,13 @@ export default function Home() {
             </Panel>
           ) : null}
           <Panel title="Class Response Results">
-            {activeQuestion.type === "choice" ? (
+            {!activeExercise.hasQuestion ? (
+              <div className="rounded-md bg-[#faf7ef] p-5">
+                <p className="text-sm font-semibold text-[#6f2c3e]">Attendance only</p>
+                <p className="mt-2 text-3xl font-semibold">{sessionRows.length}</p>
+                <p className="text-sm text-[#565a5c]">students checked in for this session</p>
+              </div>
+            ) : activeQuestion.type === "choice" ? (
               <div className="grid gap-3 md:grid-cols-2">
                 {activeQuestion.options?.map((option) => {
                   const votes = sessionRows.filter((row) => row.answer === option).length;
@@ -804,7 +822,7 @@ function StudentActivityCard({
         <div className="mt-4 rounded-md bg-white/10 p-3">
           <p className="text-sm font-semibold">{activeExercise.label}</p>
           <p className="text-xs text-[#f6dfaa]">
-            {activeExercise.dateHint} · {activeExercise.activityName}
+            {activeExercise.dateHint} · {activeExercise.hasQuestion ? activeExercise.activityName : "Attendance only"}
           </p>
         </div>
       </div>
@@ -820,32 +838,34 @@ function StudentActivityCard({
           />
         </label>
 
-        <div className="rounded-md border border-[#e0e1dd] p-3">
-          <p className="text-sm font-semibold">{activeQuestion.prompt}</p>
-          {activeQuestion.type === "choice" ? (
-            <div className="mt-3 grid gap-2">
-              {activeQuestion.options?.map((option) => (
-                <button
-                  key={option}
-                  className={answer === option ? "answer-button selected" : "answer-button"}
-                  onClick={() => setAnswer(option)}
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <textarea
-              className="field mt-3 min-h-28"
-              placeholder="Type a short response"
-              value={answer}
-              onChange={(event) => setAnswer(event.target.value)}
-            />
-          )}
-        </div>
+        {activeExercise.hasQuestion ? (
+          <div className="rounded-md border border-[#e0e1dd] p-3">
+            <p className="text-sm font-semibold">{activeQuestion.prompt}</p>
+            {activeQuestion.type === "choice" ? (
+              <div className="mt-3 grid gap-2">
+                {activeQuestion.options?.map((option) => (
+                  <button
+                    key={option}
+                    className={answer === option ? "answer-button selected" : "answer-button"}
+                    onClick={() => setAnswer(option)}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <textarea
+                className="field mt-3 min-h-28"
+                placeholder="Type a short response"
+                value={answer}
+                onChange={(event) => setAnswer(event.target.value)}
+              />
+            )}
+          </div>
+        ) : null}
 
         <button className="primary-button w-full" onClick={submitStudent}>
-          Check in and submit
+          {activeExercise.hasQuestion ? "Check in and submit" : "Check in"}
         </button>
         {message ? <p className="rounded-md bg-[#fff7e3] p-3 text-sm text-[#6f2c3e]">{message}</p> : null}
       </div>

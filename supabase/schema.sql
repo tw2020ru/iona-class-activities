@@ -55,7 +55,6 @@ for insert
 to anon
 with check (
   email ~* '^[^[:space:]@]+@(iona\.edu|gaels\.iona\.edu)$'
-  and length(answer) > 0
 );
 
 alter publication supabase_realtime add table public.class_sessions;
