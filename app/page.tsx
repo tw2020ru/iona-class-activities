@@ -266,8 +266,8 @@ function getDefaultExerciseId(courseId: string, date = new Date()) {
 
 const emailPattern = /^[^\s@]+@[^@\s]+\.[^@\s]+$/i;
 const usernamePattern = /^[a-z0-9._-]+$/i;
-const allowedTokenBuckets = 3;
 const tickMs = 45_000;
+const tokenGraceMs = 75_000;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
@@ -326,9 +326,11 @@ function makeToken(session: Session, now: number) {
 function isRecentToken(session: Session, tokenToCheck: string, now: number) {
   const currentBucket = Math.floor(now / tickMs);
   const normalizedToken = tokenToCheck.toUpperCase();
-  return Array.from({ length: allowedTokenBuckets }, (_, index) => makeTokenForBucket(session, currentBucket - index)).includes(
-    normalizedToken,
-  );
+  const bucketsToCheck = Math.ceil((tickMs + tokenGraceMs) / tickMs) + 1;
+  return Array.from({ length: bucketsToCheck }, (_, index) => currentBucket - index).some((bucket) => {
+    const tokenExpiresAt = (bucket + 1) * tickMs + tokenGraceMs;
+    return now <= tokenExpiresAt && makeTokenForBucket(session, bucket) === normalizedToken;
+  });
 }
 
 function normalizeEmail(email: string) {
