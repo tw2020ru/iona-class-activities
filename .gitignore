@@ -38,3 +38,7 @@ yarn-error.log*
 /.wrangler/
 /outputs/
 /work/
+
+# student roster exports / local PII
+*.4725_*.csv
+PS_SS_CLASS_ROSTER-*.xlsx

@@ -344,8 +344,34 @@ function normalizeStudentEmail(value: string, domain: string) {
   return `${cleanValue}@${domain}`;
 }
 
+function getUsername(value: string) {
+  return normalizeEmail(value).split("@")[0] ?? "";
+}
+
 function getStudent(email: string) {
-  return roster.find((student) => student.email === normalizeEmail(email));
+  const username = getUsername(email);
+  return roster.find((student) => getUsername(student.email) === username);
+}
+
+async function matchRosterUsername(username: string) {
+  if (!supabase) {
+    const localStudent = roster.find((student) => getUsername(student.email) === username);
+    return {
+      matched: Boolean(localStudent),
+      name: localStudent?.name ?? username,
+    };
+  }
+  const { data, error } = await supabase.rpc("match_roster_username", { input_username: username });
+  if (error || !data?.length) {
+    return {
+      matched: false,
+      name: username,
+    };
+  }
+  return {
+    matched: true,
+    name: data[0].full_name || username,
+  };
 }
 
 function downloadCsv(rows: Submission[], activeSession: Session) {
@@ -354,6 +380,7 @@ function downloadCsv(rows: Submission[], activeSession: Session) {
     "session",
     "exercise",
     "exercise_date",
+    "username",
     "email",
     "name",
     "matched_roster",
@@ -374,6 +401,7 @@ function downloadCsv(rows: Submission[], activeSession: Session) {
       activeSession.label,
       exercise?.label ?? "",
       exercise?.dateHint ?? "",
+      getUsername(row.email),
       row.email,
       row.name,
       row.matched ? "yes" : "no",
@@ -487,7 +515,7 @@ export default function Home() {
     () => submissions.filter((item) => item.sessionId === session.id),
     [session.id, submissions],
   );
-  const enrolled = roster.filter((student) => student.courseIds.includes(session.courseId));
+  const enrolled = roster;
   const answeredCount = sessionRows.filter((row) => row.answer.trim()).length;
   const rosterLeft = Math.max(enrolled.length - sessionRows.length, 0);
 
@@ -556,14 +584,13 @@ export default function Home() {
       setMessage("You already submitted for this session.");
       return;
     }
-    const student = getStudent(cleanEmail);
-    const isEnrolled = Boolean(student?.courseIds.includes(session.courseId));
+    const rosterMatch = await matchRosterUsername(username);
     const submission: Submission = {
       id: crypto.randomUUID(),
       sessionId: session.id,
       email: cleanEmail,
-      name: isEnrolled ? student?.name ?? "Roster match" : "Unmatched roster",
-      matched: isEnrolled,
+      name: rosterMatch.name,
+      matched: rosterMatch.matched,
       signedAt: new Date().toISOString(),
       token: submittedToken,
       answer: activeExercise.hasQuestion ? answer.trim() : "",
@@ -594,7 +621,7 @@ export default function Home() {
       setSubmissions(next);
     }
     setMessage(
-      isEnrolled
+      rosterMatch.matched
         ? activeExercise.hasQuestion
           ? "Submitted. You are checked in and your response was saved."
           : "Checked in. Attendance recorded."
@@ -712,7 +739,7 @@ export default function Home() {
                       ))}
                     </select>
                   </label>
-                  <label className="space-y-1 text-sm">
+                  <label className="w-full max-w-xs space-y-1 text-sm">
                     <span className="font-medium">Week / class meeting</span>
                     <select
                       className="field"
@@ -787,6 +814,7 @@ export default function Home() {
                 <thead>
                   <tr className="border-b border-[#e0e1dd] text-left text-[#565a5c]">
                     <th className="py-2 pr-3">Time</th>
+                    <th className="py-2 pr-3">Username</th>
                     <th className="py-2 pr-3">Email</th>
                     <th className="py-2 pr-3">Name</th>
                     <th className="py-2 pr-3">Answer</th>
@@ -798,6 +826,7 @@ export default function Home() {
                   {sessionRows.map((row) => (
                     <tr key={row.id} className="border-b border-[#e0e1dd]">
                       <td className="py-2 pr-3">{new Date(row.signedAt).toLocaleTimeString()}</td>
+                      <td className="py-2 pr-3">{getUsername(row.email)}</td>
                       <td className="py-2 pr-3">{row.email}</td>
                       <td className="py-2 pr-3">{row.name}</td>
                       <td className="py-2 pr-3">{row.answer}</td>
@@ -807,7 +836,7 @@ export default function Home() {
                   ))}
                   {!sessionRows.length ? (
                     <tr>
-                      <td className="py-8 text-center text-[#565a5c]" colSpan={6}>
+                      <td className="py-8 text-center text-[#565a5c]" colSpan={7}>
                         Waiting for student scans.
                       </td>
                     </tr>
@@ -820,23 +849,21 @@ export default function Home() {
             <Panel title="Class Response Results">
               <ResponseResults activeExercise={activeExercise} activeQuestion={activeQuestion} rows={sessionRows} />
             </Panel>
-            <Panel title="Roster Matching">
+            <Panel title="Username Review">
               <div className="space-y-2">
-                {enrolled.map((student) => {
-                  const checkedIn = sessionRows.some((row) => row.email === student.email);
-                  return (
-                    <div
-                      key={student.email}
-                      className="flex items-center justify-between rounded-md bg-white p-3 text-sm"
-                    >
+                {sessionRows.length ? (
+                  sessionRows.map((row) => (
+                    <div key={row.id} className="flex items-center justify-between rounded-md bg-white p-3 text-sm">
                       <div>
-                        <p className="font-medium">{student.name}</p>
-                        <p className="text-[#565a5c]">{student.email}</p>
+                        <p className="font-medium">{getUsername(row.email)}</p>
+                        <p className="text-[#565a5c]">{row.email}</p>
                       </div>
-                      <span className={checkedIn ? "mini-pill ok" : "mini-pill"}>{checkedIn ? "In" : "Out"}</span>
+                      <span className={row.matched ? "mini-pill ok" : "mini-pill"}>{row.matched ? "Matched" : "Review"}</span>
                     </div>
-                  );
-                })}
+                  ))
+                ) : (
+                  <p className="rounded-md bg-white p-3 text-sm text-[#565a5c]">Waiting for student scans.</p>
+                )}
               </div>
             </Panel>
           </div>
