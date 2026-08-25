@@ -398,9 +398,11 @@ async function matchRosterUsername(username: string) {
 function downloadCsv(rows: Submission[], activeSession: Session) {
   const headers = [
     "course",
+    "course_title",
     "session",
     "exercise",
     "exercise_date",
+    "class_meeting",
     "username",
     "email",
     "name",
@@ -419,9 +421,11 @@ function downloadCsv(rows: Submission[], activeSession: Session) {
   const csvRows = rows.map((row) =>
     [
       course?.code ?? "",
+      course?.title ?? "",
       activeSession.label,
       exercise?.label ?? "",
       exercise?.dateHint ?? "",
+      exercise ? `${exercise.meetingDate} ${exercise.startsAt}-${exercise.endsAt} ${exercise.location}` : "",
       getUsername(row.email),
       row.email,
       row.name,
@@ -850,10 +854,11 @@ export default function Home() {
               </button>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] border-collapse text-sm">
+              <table className="w-full min-w-[900px] border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-[#e0e1dd] text-left text-[#565a5c]">
                     <th className="py-2 pr-3">Time</th>
+                    <th className="py-2 pr-3">Course</th>
                     <th className="py-2 pr-3">Username</th>
                     <th className="py-2 pr-3">Email</th>
                     <th className="py-2 pr-3">Name</th>
@@ -866,6 +871,7 @@ export default function Home() {
                   {sessionRows.map((row) => (
                     <tr key={row.id} className="border-b border-[#e0e1dd]">
                       <td className="py-2 pr-3">{new Date(row.signedAt).toLocaleTimeString()}</td>
+                      <td className="py-2 pr-3">{activeCourse.code}</td>
                       <td className="py-2 pr-3">{getUsername(row.email)}</td>
                       <td className="py-2 pr-3">{row.email}</td>
                       <td className="py-2 pr-3">{row.name}</td>
@@ -876,7 +882,7 @@ export default function Home() {
                   ))}
                   {!sessionRows.length ? (
                     <tr>
-                      <td className="py-8 text-center text-[#565a5c]" colSpan={7}>
+                      <td className="py-8 text-center text-[#565a5c]" colSpan={8}>
                         Waiting for student scans.
                       </td>
                     </tr>
