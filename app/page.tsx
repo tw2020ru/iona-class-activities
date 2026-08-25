@@ -374,6 +374,11 @@ function getStudent(email: string) {
   return roster.find((student) => getUsername(student.email) === username);
 }
 
+function formatWeekMeeting(exercise?: Exercise) {
+  if (!exercise) return "";
+  return `Week ${exercise.week} / ${exercise.classMeeting}`;
+}
+
 async function matchRosterUsername(username: string) {
   if (!supabase) {
     const localStudent = roster.find((student) => getUsername(student.email) === username);
@@ -398,46 +403,26 @@ async function matchRosterUsername(username: string) {
 function downloadCsv(rows: Submission[], activeSession: Session) {
   const headers = [
     "course",
-    "course_title",
-    "session",
-    "exercise",
-    "exercise_date",
-    "class_meeting",
+    "week_meeting",
+    "checked_in_time",
     "username",
-    "email",
     "name",
-    "matched_roster",
-    "signed_at",
-    "token",
     "answer",
-    "attendance_score",
-    "response_score",
-    "total_score",
+    "roster",
     "ip_status",
-    "user_agent",
   ];
   const course = courses.find((item) => item.id === activeSession.courseId);
   const exercise = exercises.find((item) => item.id === activeSession.exerciseId);
   const csvRows = rows.map((row) =>
     [
       course?.code ?? "",
-      course?.title ?? "",
-      activeSession.label,
-      exercise?.label ?? "",
-      exercise?.dateHint ?? "",
-      exercise ? `${exercise.meetingDate} ${exercise.startsAt}-${exercise.endsAt} ${exercise.location}` : "",
+      formatWeekMeeting(exercise),
+      new Date(row.signedAt).toLocaleString(),
       getUsername(row.email),
-      row.email,
       row.name,
-      row.matched ? "yes" : "no",
-      row.signedAt,
-      row.token,
       row.answer,
-      "1",
-      row.answer.trim() ? "1" : "0",
-      String(1 + (row.answer.trim() ? 1 : 0)),
+      row.matched ? "Matched" : "Review",
       row.ipStatus,
-      row.userAgent,
     ]
       .map((value) => `"${String(value).replaceAll('"', '""')}"`)
       .join(","),
@@ -854,13 +839,13 @@ export default function Home() {
               </button>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] border-collapse text-sm">
+              <table className="w-full min-w-[920px] border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-[#e0e1dd] text-left text-[#565a5c]">
-                    <th className="py-2 pr-3">Time</th>
                     <th className="py-2 pr-3">Course</th>
+                    <th className="py-2 pr-3">Week / class</th>
+                    <th className="py-2 pr-3">Checked in</th>
                     <th className="py-2 pr-3">Username</th>
-                    <th className="py-2 pr-3">Email</th>
                     <th className="py-2 pr-3">Name</th>
                     <th className="py-2 pr-3">Answer</th>
                     <th className="py-2 pr-3">Roster</th>
@@ -870,10 +855,10 @@ export default function Home() {
                 <tbody>
                   {sessionRows.map((row) => (
                     <tr key={row.id} className="border-b border-[#e0e1dd]">
-                      <td className="py-2 pr-3">{new Date(row.signedAt).toLocaleTimeString()}</td>
                       <td className="py-2 pr-3">{activeCourse.code}</td>
+                      <td className="py-2 pr-3">{formatWeekMeeting(activeExercise)}</td>
+                      <td className="py-2 pr-3">{new Date(row.signedAt).toLocaleTimeString()}</td>
                       <td className="py-2 pr-3">{getUsername(row.email)}</td>
-                      <td className="py-2 pr-3">{row.email}</td>
                       <td className="py-2 pr-3">{row.name}</td>
                       <td className="py-2 pr-3">{row.answer}</td>
                       <td className="py-2 pr-3">{row.matched ? "Matched" : "Review"}</td>
