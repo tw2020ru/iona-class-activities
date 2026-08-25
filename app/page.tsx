@@ -279,6 +279,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 const publicSiteUrl = "https://iona-class-activities.vercel.app";
+const instructorSessionStorageKey = "iona-current-instructor-session";
 const ionaKnotSrc =
   "https://d1ctk4ronrg3qz.cloudfront.net/admin/1659367858478_IONA-University_PrimaryStacked-LightBG.png";
 
@@ -294,6 +295,19 @@ function loadSubmissions() {
 function saveSubmissions(items: Submission[]) {
   localStorage.setItem("iona-submissions", JSON.stringify(items));
   window.dispatchEvent(new Event("iona-submissions-updated"));
+}
+
+function loadStoredInstructorSession() {
+  if (typeof window === "undefined") return null;
+  try {
+    return JSON.parse(localStorage.getItem(instructorSessionStorageKey) ?? "null") as Session | null;
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredInstructorSession(activeSession: Session) {
+  localStorage.setItem(instructorSessionStorageKey, JSON.stringify(activeSession));
 }
 
 async function loadRemoteSubmissions() {
@@ -468,6 +482,7 @@ export default function Home() {
     const submissionsRefreshInterval = window.setInterval(refresh, 10000);
     window.addEventListener("iona-submissions-updated", refresh);
     window.addEventListener("storage", refresh);
+    window.addEventListener("focus", refresh);
     const sessionId = new URLSearchParams(window.location.search).get("session");
     if (sessionId && supabase) {
       supabase
@@ -489,6 +504,11 @@ export default function Home() {
             setView("projection");
           }
         });
+    } else {
+      const storedSession = loadStoredInstructorSession();
+      if (storedSession) {
+        setSession(storedSession);
+      }
     }
     const channel = supabase
       ?.channel("classroom-activity")
@@ -500,6 +520,7 @@ export default function Home() {
       window.clearInterval(submissionsRefreshInterval);
       window.removeEventListener("iona-submissions-updated", refresh);
       window.removeEventListener("storage", refresh);
+      window.removeEventListener("focus", refresh);
       if (channel) {
         supabase?.removeChannel(channel);
       }
@@ -545,6 +566,7 @@ export default function Home() {
       startedAt: new Date().toISOString(),
     };
     setSession(nextSession);
+    saveStoredInstructorSession(nextSession);
     if (supabase) {
       await supabase.from("class_sessions").insert({
         id: nextSession.id,
