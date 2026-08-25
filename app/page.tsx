@@ -451,6 +451,7 @@ export default function Home() {
   const [customEmailDomain, setCustomEmailDomain] = useState("");
   const [answer, setAnswer] = useState("");
   const [message, setMessage] = useState("");
+  const [checkedInSubmission, setCheckedInSubmission] = useState<Submission | null>(null);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
 
   useEffect(() => {
@@ -549,6 +550,7 @@ export default function Home() {
     setView("projection");
     setMessage("");
     setAnswer("");
+    setCheckedInSubmission(null);
   }
 
   async function submitStudent() {
@@ -580,7 +582,9 @@ export default function Home() {
     }
     const submittedToken = urlToken?.toUpperCase() ?? makeToken(session, Date.now());
     const existing = supabase ? await loadRemoteSubmissions() : loadSubmissions();
-    if (existing.some((item) => item.sessionId === session.id && item.email === cleanEmail)) {
+    const duplicateSubmission = existing.find((item) => item.sessionId === session.id && item.email === cleanEmail);
+    if (duplicateSubmission) {
+      setCheckedInSubmission(duplicateSubmission);
       setMessage("You already submitted for this session.");
       return;
     }
@@ -627,6 +631,7 @@ export default function Home() {
           : "Checked in. Attendance recorded."
         : "Submitted as unmatched. Instructor can review.",
     );
+    setCheckedInSubmission(submission);
     setAnswer("");
   }
 
@@ -645,6 +650,7 @@ export default function Home() {
             email={email}
             answer={answer}
             message={message}
+            checkedInSubmission={checkedInSubmission}
             setEmail={setEmail}
             emailDomain={emailDomain}
             setEmailDomain={setEmailDomain}
@@ -1033,6 +1039,7 @@ function StudentActivityCard({
   customEmailDomain,
   answer,
   message,
+  checkedInSubmission,
   setEmail,
   setEmailDomain,
   setCustomEmailDomain,
@@ -1047,23 +1054,72 @@ function StudentActivityCard({
   customEmailDomain: string;
   answer: string;
   message: string;
+  checkedInSubmission: Submission | null;
   setEmail: (value: string) => void;
   setEmailDomain: (value: string) => void;
   setCustomEmailDomain: (value: string) => void;
   setAnswer: (value: string) => void;
   submitStudent: () => void;
 }) {
+  if (checkedInSubmission) {
+    return (
+      <>
+        <StudentClassHeader activeCourse={activeCourse} activeExercise={activeExercise} />
+        <div className="mt-4 rounded-md border border-[#e0e1dd] bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold uppercase text-[#6f2c3e]">Check-in complete</p>
+              <h2 className="mt-1 text-2xl font-semibold">You are recorded for this class session.</h2>
+              <p className="mt-2 text-sm text-[#565a5c]">
+                Submitted as <span className="font-semibold text-[#232629]">{checkedInSubmission.email}</span>
+              </p>
+            </div>
+            <span className={checkedInSubmission.matched ? "mini-pill ok" : "mini-pill"}>
+              {checkedInSubmission.matched ? "Roster matched" : "Instructor review"}
+            </span>
+          </div>
+          {message ? <p className="mt-4 rounded-md bg-[#fff7e3] p-3 text-sm text-[#6f2c3e]">{message}</p> : null}
+        </div>
+
+        <div className="mt-4 rounded-md border border-[#e0e1dd] bg-[#faf7ef] p-4">
+          <p className="text-sm font-semibold uppercase text-[#6f2c3e]">Today</p>
+          <h3 className="mt-1 text-xl font-semibold">{activeExercise.label}</h3>
+          <p className="mt-1 text-sm text-[#565a5c]">
+            {activeExercise.meetingDate} · {activeExercise.startsAt}-{activeExercise.endsAt} · {activeExercise.location}
+          </p>
+          <ul className="mt-4 space-y-2 text-sm text-[#232629]">
+            <li>Attendance is saved for this session.</li>
+            {activeExercise.hasQuestion ? (
+              <li>Your class response is saved with your check-in.</li>
+            ) : (
+              <li>No in-class question is open right now.</li>
+            )}
+            <li>Follow the instructor's next in-class activity.</li>
+          </ul>
+        </div>
+
+        <div className="mt-4 rounded-md border border-[#e0e1dd] bg-white p-4">
+          <p className="text-sm font-semibold uppercase text-[#6f2c3e]">Class outline</p>
+          <div className="mt-3 grid gap-3">
+            <div className="rounded-md bg-[#faf7ef] p-3">
+              <p className="font-semibold">Session focus</p>
+              <p className="mt-1 text-sm text-[#565a5c]">{activeCourse.title}</p>
+            </div>
+            <div className="rounded-md bg-[#faf7ef] p-3">
+              <p className="font-semibold">Current requirement</p>
+              <p className="mt-1 text-sm text-[#565a5c]">
+                Check in with your Gaels email username and complete any in-class prompt assigned by the instructor.
+              </p>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
-      <div className="student-course-banner rounded-md p-4 text-white">
-        <h2 className="text-3xl font-semibold">{activeCourse.code}</h2>
-        <p className="mt-1 text-sm text-[#f3ebe0]">{activeCourse.title}</p>
-        <p className="mt-1 text-xs text-[#f6dfaa]">{activeCourse.meeting}</p>
-        <div className="mt-4 rounded-md bg-white/10 p-3">
-          <p className="text-sm font-semibold">{activeExercise.label}</p>
-          <p className="text-xs text-[#f6dfaa]">{activeExercise.dateHint}</p>
-        </div>
-      </div>
+      <StudentClassHeader activeCourse={activeCourse} activeExercise={activeExercise} />
 
       <div className="mt-4 space-y-3">
         <label className="space-y-1 text-sm">
@@ -1132,6 +1188,27 @@ function StudentActivityCard({
         {message ? <p className="rounded-md bg-[#fff7e3] p-3 text-sm text-[#6f2c3e]">{message}</p> : null}
       </div>
     </>
+  );
+}
+
+function StudentClassHeader({
+  activeCourse,
+  activeExercise,
+}: {
+  activeCourse: Course;
+  activeExercise: Exercise;
+}) {
+  return (
+    <div className="student-course-banner rounded-md p-4 text-white">
+      <h2 className="text-3xl font-semibold">{activeCourse.code}</h2>
+      <p className="mt-1 text-sm text-[#f3ebe0]">{activeCourse.title}</p>
+      <div className="mt-4 rounded-md bg-white/10 p-3">
+        <p className="text-sm font-semibold">{activeExercise.label}</p>
+        <p className="text-xs text-[#f6dfaa]">
+          {activeExercise.meetingDate} · {activeExercise.startsAt}-{activeExercise.endsAt} · {activeExercise.location}
+        </p>
+      </div>
+    </div>
   );
 }
 
