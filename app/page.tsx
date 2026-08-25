@@ -901,8 +901,10 @@ export default function Home() {
                   sessionRows.map((row) => (
                     <div key={row.id} className="flex items-center justify-between rounded-md bg-white p-3 text-sm">
                       <div>
-                        <p className="font-medium">{getUsername(row.email)}</p>
-                        <p className="text-[#565a5c]">{row.email}</p>
+                        <p className="font-medium">{row.name}</p>
+                        <p className="text-[#565a5c]">
+                          {getUsername(row.email)} · {row.email}
+                        </p>
                       </div>
                       <span className={row.matched ? "mini-pill ok" : "mini-pill"}>{row.matched ? "Matched" : "Review"}</span>
                     </div>
