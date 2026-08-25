@@ -89,6 +89,13 @@ const courses: Course[] = [
   },
 ];
 
+const courseEnrollmentCounts: Record<string, number> = {
+  "course-1": 29,
+  "course-2": 29,
+  "course-3": 12,
+  "course-4": 6,
+};
+
 const roster: Student[] = [
   {
     email: "student.one@iona.edu",
@@ -456,8 +463,9 @@ export default function Home() {
 
   useEffect(() => {
     loadRemoteSubmissions().then(setSubmissions);
-    const interval = window.setInterval(() => setNow(Date.now()), 1000);
     const refresh = () => loadRemoteSubmissions().then(setSubmissions);
+    const clockInterval = window.setInterval(() => setNow(Date.now()), 1000);
+    const submissionsRefreshInterval = window.setInterval(refresh, 10000);
     window.addEventListener("iona-submissions-updated", refresh);
     window.addEventListener("storage", refresh);
     const sessionId = new URLSearchParams(window.location.search).get("session");
@@ -488,7 +496,8 @@ export default function Home() {
       .on("postgres_changes", { event: "*", schema: "public", table: "class_sessions" }, refresh)
       .subscribe();
     return () => {
-      window.clearInterval(interval);
+      window.clearInterval(clockInterval);
+      window.clearInterval(submissionsRefreshInterval);
       window.removeEventListener("iona-submissions-updated", refresh);
       window.removeEventListener("storage", refresh);
       if (channel) {
@@ -516,9 +525,9 @@ export default function Home() {
     () => submissions.filter((item) => item.sessionId === session.id),
     [session.id, submissions],
   );
-  const enrolled = roster;
+  const expectedCount = courseEnrollmentCounts[session.courseId] ?? roster.length;
   const answeredCount = sessionRows.filter((row) => row.answer.trim()).length;
-  const rosterLeft = Math.max(enrolled.length - sessionRows.length, 0);
+  const rosterLeft = Math.max(expectedCount - sessionRows.length, 0);
 
   async function startSession() {
     const nextSession = {
@@ -689,8 +698,11 @@ export default function Home() {
           </div>
           <div className="grid grid-cols-3 gap-2 text-center">
             <Metric label="Checked in" value={sessionRows.length} />
-            <Metric label="Answered" value={answeredCount} />
-            <Metric label="Roster left" value={rosterLeft} />
+            <Metric
+              label={activeExercise.hasQuestion ? "Answered" : "Expected"}
+              value={activeExercise.hasQuestion ? answeredCount : expectedCount}
+            />
+            <Metric label="Remaining" value={rosterLeft} />
           </div>
         </div>
       </section>
