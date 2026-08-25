@@ -92,8 +92,8 @@ const courses: Course[] = [
 const courseEnrollmentCounts: Record<string, number> = {
   "course-1": 29,
   "course-2": 29,
-  "course-3": 12,
-  "course-4": 6,
+  "course-3": 5,
+  "course-4": 12,
 };
 
 const roster: Student[] = [
