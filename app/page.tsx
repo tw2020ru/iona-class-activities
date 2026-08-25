@@ -96,6 +96,13 @@ const courseEnrollmentCounts: Record<string, number> = {
   "course-4": 12,
 };
 
+const courseSourceCodes: Record<string, string> = {
+  "course-1": "1141",
+  "course-2": "1142",
+  "course-3": "2082",
+  "course-4": "1937",
+};
+
 const roster: Student[] = [
   {
     email: "student.one@iona.edu",
@@ -379,15 +386,30 @@ function formatWeekMeeting(exercise?: Exercise) {
   return `Week ${exercise.week} / ${exercise.classMeeting}`;
 }
 
-async function matchRosterUsername(username: string) {
+function getExerciseCloseTime(exercise?: Exercise) {
+  if (!exercise) return null;
+  const endsAt = new Date(`${exercise.meetingDate}T${exercise.endsAt}:00`);
+  return new Date(endsAt.getTime() + 10 * 60 * 1000);
+}
+
+function isPastExerciseCloseTime(exercise: Exercise | undefined, nowMs = Date.now()) {
+  const closesAt = getExerciseCloseTime(exercise);
+  return Boolean(closesAt && nowMs > closesAt.getTime());
+}
+
+async function matchRosterUsername(username: string, courseId: string) {
+  const courseSourceCode = courseSourceCodes[courseId] ?? "";
   if (!supabase) {
-    const localStudent = roster.find((student) => getUsername(student.email) === username);
+    const localStudent = roster.find((student) => getUsername(student.email) === username && student.courseIds.includes(courseId));
     return {
       matched: Boolean(localStudent),
       name: localStudent?.name ?? username,
     };
   }
-  const { data, error } = await supabase.rpc("match_roster_username", { input_username: username });
+  const { data, error } = await supabase.rpc("match_roster_username", {
+    input_username: username,
+    input_course_code: courseSourceCode,
+  });
   if (error || !data?.length) {
     return {
       matched: false,
@@ -538,6 +560,13 @@ export default function Home() {
   const expectedCount = courseEnrollmentCounts[session.courseId] ?? roster.length;
   const answeredCount = sessionRows.filter((row) => row.answer.trim()).length;
   const rosterLeft = Math.max(expectedCount - sessionRows.length, 0);
+  const sessionClosesAt = getExerciseCloseTime(activeExercise);
+  const sessionExpired = isPastExerciseCloseTime(activeExercise, now);
+
+  useEffect(() => {
+    if (!session.active || !sessionExpired || isStudentMode) return;
+    closeSession(true);
+  }, [session.active, sessionExpired, isStudentMode]);
 
   async function startSession() {
     const nextSession = {
@@ -573,6 +602,22 @@ export default function Home() {
     setCheckedInSubmission(null);
   }
 
+  async function closeSession(shouldExport = false) {
+    const closedSession = { ...session, active: false };
+    setSession(closedSession);
+    saveStoredInstructorSession(closedSession);
+    if (supabase) {
+      await supabase.from("class_sessions").update({ active: false }).eq("id", session.id);
+    }
+    if (shouldExport && sessionRows.length) {
+      const exportKey = `iona-exported-session-${session.id}`;
+      if (!localStorage.getItem(exportKey)) {
+        localStorage.setItem(exportKey, "1");
+        downloadCsv(sessionRows, session);
+      }
+    }
+  }
+
   async function submitStudent() {
     const urlParams = new URLSearchParams(window.location.search);
     const urlSessionId = urlParams.get("session");
@@ -595,6 +640,10 @@ export default function Home() {
       setMessage("This session is not active.");
       return;
     }
+    if (isPastExerciseCloseTime(activeExercise)) {
+      setMessage("This class session is closed.");
+      return;
+    }
     const urlToken = urlParams.get("token");
     if (urlToken && !isRecentToken(session, urlToken, Date.now())) {
       setMessage("This QR code has expired. Scan the current code.");
@@ -608,7 +657,7 @@ export default function Home() {
       setMessage("You already submitted for this session.");
       return;
     }
-    const rosterMatch = await matchRosterUsername(username);
+    const rosterMatch = await matchRosterUsername(username, session.courseId);
     const submission: Submission = {
       id: crypto.randomUUID(),
       sessionId: session.id,
@@ -833,10 +882,19 @@ export default function Home() {
       ) : (
         <section className="dashboard-layout mx-auto grid max-w-7xl gap-5 px-5 py-5">
           <Panel title="Live Submissions">
-            <div className="mb-4 flex justify-end">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-[#565a5c]">
+                {session.active ? "Active" : "Closed"}
+                {sessionClosesAt ? ` · Auto closes at ${sessionClosesAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button className="secondary-button px-4" onClick={() => closeSession(true)}>
+                  End session & export CSV
+                </button>
               <button className="secondary-button px-4" onClick={() => downloadCsv(sessionRows, session)}>
                 Export CSV
               </button>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[920px] border-collapse text-sm">
