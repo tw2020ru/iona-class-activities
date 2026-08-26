@@ -282,8 +282,8 @@ const emailPattern = /^[^\s@]+@[^@\s]+\.[^@\s]+$/i;
 const usernamePattern = /^[a-z0-9._-]+$/i;
 const tickMs = 45_000;
 const tokenGraceMs = 75_000;
-const sessionReuseBeforeStartMs = 60 * 60 * 1000;
-const sessionCloseAfterEndMs = 30 * 60 * 1000;
+const sessionReuseBeforeStartMs = 15 * 60 * 1000;
+const sessionCloseAfterEndMs = 15 * 60 * 1000;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
@@ -990,7 +990,7 @@ export default function Home() {
                     Start session
                   </button>
                   <p className="text-xs text-[#565a5c]">
-                    Reuses the same session during class and until 30 minutes after class ends.
+                    Reuses the same session from 15 minutes before class until 15 minutes after class ends.
                   </p>
                 </div>
               </div>
