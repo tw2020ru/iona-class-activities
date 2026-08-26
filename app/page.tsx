@@ -282,6 +282,8 @@ const emailPattern = /^[^\s@]+@[^@\s]+\.[^@\s]+$/i;
 const usernamePattern = /^[a-z0-9._-]+$/i;
 const tickMs = 45_000;
 const tokenGraceMs = 75_000;
+const sessionReuseBeforeStartMs = 60 * 60 * 1000;
+const sessionCloseAfterEndMs = 30 * 60 * 1000;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
@@ -413,12 +415,20 @@ function formatWeekMeeting(exercise?: Exercise) {
 function getExerciseCloseTime(exercise?: Exercise) {
   if (!exercise) return null;
   const endsAt = new Date(`${exercise.meetingDate}T${exercise.endsAt}:00`);
-  return new Date(endsAt.getTime() + 10 * 60 * 1000);
+  return new Date(endsAt.getTime() + sessionCloseAfterEndMs);
 }
 
 function isPastExerciseCloseTime(exercise: Exercise | undefined, nowMs = Date.now()) {
   const closesAt = getExerciseCloseTime(exercise);
   return Boolean(closesAt && nowMs > closesAt.getTime());
+}
+
+function isWithinSessionReuseWindow(exercise: Exercise | undefined, nowMs = Date.now()) {
+  if (!exercise) return false;
+  const startsAt = new Date(`${exercise.meetingDate}T${exercise.startsAt}:00`).getTime();
+  const closesAt = getExerciseCloseTime(exercise)?.getTime();
+  if (!closesAt) return false;
+  return nowMs >= startsAt - sessionReuseBeforeStartMs && nowMs <= closesAt;
 }
 
 async function matchRosterUsername(username: string, courseId: string) {
@@ -602,6 +612,49 @@ export default function Home() {
   }, [session.active, sessionExpired, isStudentMode]);
 
   async function startSession() {
+    const selectedExercise = exercises.find((exercise) => exercise.id === selectedExerciseId);
+    let reusableSession = sessions.find(
+      (item) =>
+        item.courseId === selectedCourseId &&
+        item.exerciseId === selectedExerciseId &&
+        isWithinSessionReuseWindow(selectedExercise, now),
+    );
+    if (!reusableSession && supabase && isWithinSessionReuseWindow(selectedExercise, now)) {
+      const { data } = await supabase
+        .from("class_sessions")
+        .select("id, course_id, exercise_id, label, active, token_seed, started_at")
+        .eq("course_id", selectedCourseId)
+        .eq("exercise_id", selectedExerciseId)
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) {
+        reusableSession = {
+          id: data.id,
+          courseId: data.course_id,
+          exerciseId: data.exercise_id,
+          label: data.label,
+          active: data.active,
+          tokenSeed: data.token_seed,
+          startedAt: data.started_at,
+        };
+      }
+    }
+    if (reusableSession) {
+      const resumedSession = { ...reusableSession, active: true };
+      setSession(resumedSession);
+      setSessions((items) => [resumedSession, ...items.filter((item) => item.id !== resumedSession.id)]);
+      saveStoredInstructorSession(resumedSession);
+      if (supabase && !reusableSession.active) {
+        await supabase.from("class_sessions").update({ active: true }).eq("id", reusableSession.id);
+      }
+      setView("projection");
+      setMessage("");
+      setAnswer("");
+      setCheckedInSubmission(null);
+      return;
+    }
+
     const nextSession = {
       id: crypto.randomUUID(),
       courseId: selectedCourseId,
@@ -936,6 +989,9 @@ export default function Home() {
                   <button className="primary-button session-action-bar" onClick={startSession}>
                     Start session
                   </button>
+                  <p className="text-xs text-[#565a5c]">
+                    Reuses the same session during class and until 30 minutes after class ends.
+                  </p>
                 </div>
               </div>
               <QrBlock
