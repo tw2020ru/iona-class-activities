@@ -286,6 +286,8 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 const publicSiteUrl = "https://iona-class-activities.vercel.app";
+const instructorPassword = process.env.NEXT_PUBLIC_INSTRUCTOR_PASSWORD || "iona-admin";
+const instructorAuthStorageKey = "iona-instructor-unlocked";
 const instructorSessionStorageKey = "iona-current-instructor-session";
 const ionaKnotSrc =
   "https://d1ctk4ronrg3qz.cloudfront.net/admin/1659367858478_IONA-University_PrimaryStacked-LightBG.png";
@@ -335,6 +337,28 @@ async function loadRemoteSubmissions() {
     answer: row.answer,
     userAgent: row.user_agent ?? "",
     ipStatus: row.ip_status ?? "Captured by Supabase request path",
+  }));
+}
+
+async function loadRemoteSessions() {
+  if (!supabase) {
+    const storedSession = loadStoredInstructorSession();
+    return storedSession ? [storedSession] : [];
+  }
+  const { data, error } = await supabase
+    .from("class_sessions")
+    .select("id, course_id, exercise_id, label, active, token_seed, started_at")
+    .order("started_at", { ascending: false })
+    .limit(60);
+  if (error || !data) return [];
+  return data.map((row) => ({
+    id: row.id,
+    courseId: row.course_id,
+    exerciseId: row.exercise_id,
+    label: row.label,
+    active: row.active,
+    tokenSeed: row.token_seed,
+    startedAt: row.started_at,
   }));
 }
 
@@ -483,12 +507,21 @@ export default function Home() {
   const [customEmailDomain, setCustomEmailDomain] = useState("");
   const [answer, setAnswer] = useState("");
   const [message, setMessage] = useState("");
+  const [adminPasswordInput, setAdminPasswordInput] = useState("");
+  const [adminAuthMessage, setAdminAuthMessage] = useState("");
+  const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [checkedInSubmission, setCheckedInSubmission] = useState<Submission | null>(null);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
 
   useEffect(() => {
-    loadRemoteSubmissions().then(setSubmissions);
-    const refresh = () => loadRemoteSubmissions().then(setSubmissions);
+    const isInstructorUnlocked = localStorage.getItem(instructorAuthStorageKey) === "1";
+    setAdminUnlocked(isInstructorUnlocked);
+    const refresh = () => {
+      loadRemoteSubmissions().then(setSubmissions);
+      loadRemoteSessions().then(setSessions);
+    };
+    refresh();
     const clockInterval = window.setInterval(() => setNow(Date.now()), 1000);
     const submissionsRefreshInterval = window.setInterval(refresh, 10000);
     window.addEventListener("iona-submissions-updated", refresh);
@@ -584,6 +617,7 @@ export default function Home() {
       startedAt: new Date().toISOString(),
     };
     setSession(nextSession);
+    setSessions((items) => [nextSession, ...items.filter((item) => item.id !== nextSession.id)]);
     saveStoredInstructorSession(nextSession);
     if (supabase) {
       await supabase.from("class_sessions").insert({
@@ -602,9 +636,16 @@ export default function Home() {
     setCheckedInSubmission(null);
   }
 
+  function openHistoricalSession(targetSession: Session) {
+    setSession(targetSession);
+    saveStoredInstructorSession(targetSession);
+    setView("backend");
+  }
+
   async function closeSession(shouldExport = false) {
     const closedSession = { ...session, active: false };
     setSession(closedSession);
+    setSessions((items) => items.map((item) => (item.id === closedSession.id ? closedSession : item)));
     saveStoredInstructorSession(closedSession);
     if (supabase) {
       await supabase.from("class_sessions").update({ active: false }).eq("id", session.id);
@@ -733,6 +774,55 @@ export default function Home() {
     );
   }
 
+  if (!adminUnlocked) {
+    return (
+      <main className="brand-shell flex min-h-screen items-center justify-center px-4 py-8 text-[#232629]">
+        <section className="w-full max-w-md rounded-lg border border-[#e0e1dd] bg-white p-6 shadow-sm">
+          <div className="mb-5 flex items-center gap-2 text-sm font-bold uppercase text-[#6f2c3e]">
+            <IonaMark />
+            <span>Instructor Access</span>
+          </div>
+          <h1 className="text-2xl font-semibold">Enter admin password</h1>
+          <div className="mt-5 space-y-3">
+            <input
+              className="field"
+              type="password"
+              value={adminPasswordInput}
+              onChange={(event) => setAdminPasswordInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  if (adminPasswordInput === instructorPassword) {
+                    localStorage.setItem(instructorAuthStorageKey, "1");
+                    setAdminUnlocked(true);
+                    setAdminAuthMessage("");
+                  } else {
+                    setAdminAuthMessage("Incorrect password.");
+                  }
+                }
+              }}
+              placeholder="Password"
+            />
+            <button
+              className="primary-button w-full"
+              onClick={() => {
+                if (adminPasswordInput === instructorPassword) {
+                  localStorage.setItem(instructorAuthStorageKey, "1");
+                  setAdminUnlocked(true);
+                  setAdminAuthMessage("");
+                } else {
+                  setAdminAuthMessage("Incorrect password.");
+                }
+              }}
+            >
+              Unlock instructor view
+            </button>
+            {adminAuthMessage ? <p className="rounded-md bg-[#fff7e3] p-3 text-sm text-[#6f2c3e]">{adminAuthMessage}</p> : null}
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="brand-shell min-h-screen text-[#232629]">
       <section className="brand-header">
@@ -780,6 +870,16 @@ export default function Home() {
           </button>
           <button className={view === "backend" ? "view-tab active" : "view-tab"} onClick={() => setView("backend")}>
             Backend
+          </button>
+          <button
+            className="view-tab"
+            onClick={() => {
+              localStorage.removeItem(instructorAuthStorageKey);
+              setAdminUnlocked(false);
+              setAdminPasswordInput("");
+            }}
+          >
+            Lock
           </button>
         </div>
       </div>
@@ -935,6 +1035,47 @@ export default function Home() {
             </div>
           </Panel>
           <div className="space-y-5">
+            <Panel title="Session History">
+              <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                {sessions.length ? (
+                  sessions.map((item) => {
+                    const itemCourse = courses.find((course) => course.id === item.courseId);
+                    const itemExercise = exercises.find((exercise) => exercise.id === item.exerciseId);
+                    const itemRows = submissions.filter((row) => row.sessionId === item.id);
+                    const isCurrent = item.id === session.id;
+                    return (
+                      <button
+                        key={item.id}
+                        className={`w-full rounded-md border p-3 text-left text-sm ${
+                          isCurrent ? "border-[#6f2c3e] bg-[#fff7e3]" : "border-[#e0e1dd] bg-white"
+                        }`}
+                        onClick={() => openHistoricalSession(item)}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold">{itemCourse?.code ?? item.courseId}</p>
+                            <p className="mt-1 text-[#565a5c]">
+                              {itemExercise ? `${formatWeekMeeting(itemExercise)} · ${itemExercise.meetingDate}` : item.exerciseId}
+                            </p>
+                            <p className="mt-1 text-xs text-[#565a5c]">
+                              Started {new Date(item.startedAt).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <span className={item.active ? "mini-pill ok" : "mini-pill"}>
+                              {item.active ? "Active" : "Closed"}
+                            </span>
+                            <p className="mt-2 text-xs font-semibold text-[#565a5c]">{itemRows.length} checked in</p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <p className="rounded-md bg-white p-3 text-sm text-[#565a5c]">No sessions found.</p>
+                )}
+              </div>
+            </Panel>
             <Panel title="Class Response Results">
               <ResponseResults activeExercise={activeExercise} activeQuestion={activeQuestion} rows={sessionRows} />
             </Panel>
