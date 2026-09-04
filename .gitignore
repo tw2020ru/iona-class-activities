@@ -42,3 +42,5 @@ yarn-error.log*
 # student roster exports / local PII
 *.4725_*.csv
 PS_SS_CLASS_ROSTER-*.xlsx
+/supabase/student-roster.sql
+*.tsbuildinfo

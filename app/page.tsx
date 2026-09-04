@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { buildAttendanceRows, downloadAttendanceWorkbook, submissionUsername, type RosterEntry } from "./attendance-report";
 
 type Course = {
   id: string;
@@ -288,13 +289,12 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 const publicSiteUrl = "https://iona-class-activities.vercel.app";
-const instructorPassword = process.env.NEXT_PUBLIC_INSTRUCTOR_PASSWORD || "iona-admin";
-const instructorAuthStorageKey = "iona-instructor-unlocked";
+const instructorAuthStorageKey = "iona-instructor-access-key";
 const instructorSessionStorageKey = "iona-current-instructor-session";
 const ionaKnotSrc =
   "https://d1ctk4ronrg3qz.cloudfront.net/admin/1659367858478_IONA-University_PrimaryStacked-LightBG.png";
 
-function loadSubmissions() {
+function loadSubmissions(): Submission[] {
   if (typeof window === "undefined") return [];
   try {
     return JSON.parse(localStorage.getItem("iona-submissions") ?? "[]");
@@ -321,12 +321,15 @@ function saveStoredInstructorSession(activeSession: Session) {
   localStorage.setItem(instructorSessionStorageKey, JSON.stringify(activeSession));
 }
 
-async function loadRemoteSubmissions() {
+async function loadRemoteSubmissions(sessionId?: string, strict = false) {
   if (!supabase) return loadSubmissions();
-  const { data, error } = await supabase
+  let query = supabase
     .from("activity_submissions")
     .select("id, session_id, email, name, matched, signed_at, token, answer, user_agent, ip_status")
     .order("signed_at", { ascending: false });
+  if (sessionId) query = query.eq("session_id", sessionId);
+  const { data, error } = await query;
+  if (error && strict) throw new Error("Could not refresh attendance. No report was downloaded.");
   if (error || !data) return loadSubmissions();
   return data.map((row) => ({
     id: row.id,
@@ -456,42 +459,16 @@ async function matchRosterUsername(username: string, courseId: string) {
   };
 }
 
-function downloadCsv(rows: Submission[], activeSession: Session) {
-  const headers = [
-    "course",
-    "week_meeting",
-    "checked_in_time",
-    "username",
-    "name",
-    "answer",
-    "roster",
-    "ip_status",
-  ];
-  const course = courses.find((item) => item.id === activeSession.courseId);
-  const exercise = exercises.find((item) => item.id === activeSession.exerciseId);
-  const csvRows = rows.map((row) =>
-    [
-      course?.code ?? "",
-      formatWeekMeeting(exercise),
-      new Date(row.signedAt).toLocaleString(),
-      getUsername(row.email),
-      row.name,
-      row.answer,
-      row.matched ? "Matched" : "Review",
-      row.ipStatus,
-    ]
-      .map((value) => `"${String(value).replaceAll('"', '""')}"`)
-      .join(","),
-  );
-  const blob = new Blob([[headers.join(","), ...csvRows].join("\n")], {
-    type: "text/csv;charset=utf-8",
+async function loadCourseRoster(courseId: string, password: string): Promise<RosterEntry[]> {
+  if (!supabase) throw new Error("The database connection is unavailable.");
+  const { data, error } = await supabase.rpc("instructor_get_course_roster", {
+    input_password: password,
+    input_course_code: courseSourceCodes[courseId],
+    input_term_code: "4725",
   });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `${course?.code ?? "course"}-${activeSession.label}-activity.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
+  if (error) throw new Error(error.code === "42501" ? "Sign in again to access the course roster." : "Could not load the course roster. Please try again.");
+  if (!data?.length) throw new Error("No roster is available for this course.");
+  return data;
 }
 
 export default function Home() {
@@ -520,13 +497,24 @@ export default function Home() {
   const [adminPasswordInput, setAdminPasswordInput] = useState("");
   const [adminAuthMessage, setAdminAuthMessage] = useState("");
   const [adminUnlocked, setAdminUnlocked] = useState(false);
+  const [instructorKey, setInstructorKey] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [courseRoster, setCourseRoster] = useState<{ courseId: string; rows: RosterEntry[] } | null>(null);
+  const [rosterError, setRosterError] = useState("");
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportMessage, setExportMessage] = useState("");
   const [checkedInSubmission, setCheckedInSubmission] = useState<Submission | null>(null);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
 
   useEffect(() => {
-    const isInstructorUnlocked = localStorage.getItem(instructorAuthStorageKey) === "1";
-    setAdminUnlocked(isInstructorUnlocked);
+    const savedKey = sessionStorage.getItem(instructorAuthStorageKey);
+    if (savedKey && supabase) {
+      supabase.rpc("verify_instructor_password", { input_password: savedKey }).then(({ data, error }) => {
+        if (data === true && !error) { setInstructorKey(savedKey); setAdminUnlocked(true); }
+        else sessionStorage.removeItem(instructorAuthStorageKey);
+      });
+    }
     const refresh = () => {
       loadRemoteSubmissions().then(setSubmissions);
       loadRemoteSessions().then(setSessions);
@@ -600,16 +588,73 @@ export default function Home() {
     () => submissions.filter((item) => item.sessionId === session.id),
     [session.id, submissions],
   );
-  const expectedCount = courseEnrollmentCounts[session.courseId] ?? roster.length;
+  const activeRoster = courseRoster?.courseId === session.courseId ? courseRoster.rows : null;
+  const hasRecordedSession = sessions.some(item => item.id === session.id);
+  const attendanceReport = useMemo(() => activeRoster && hasRecordedSession ? buildAttendanceRows(activeRoster, sessionRows, session.id) : null,
+    [activeRoster, sessionRows, session.id, hasRecordedSession]);
+  const expectedCount = activeRoster?.length ?? courseEnrollmentCounts[session.courseId] ?? roster.length;
   const answeredCount = sessionRows.filter((row) => row.answer.trim()).length;
-  const rosterLeft = Math.max(expectedCount - sessionRows.length, 0);
+  const checkedInCount = attendanceReport?.rows.filter(row => row.checkedIn).length ?? sessionRows.length;
+  const rosterLeft = Math.max(expectedCount - checkedInCount, 0);
   const sessionClosesAt = getExerciseCloseTime(activeExercise);
   const sessionExpired = isPastExerciseCloseTime(activeExercise, now);
 
   useEffect(() => {
-    if (!session.active || !sessionExpired || isStudentMode) return;
+    if (isStudentMode || !adminUnlocked || !instructorKey) return;
+    let cancelled = false;
+    setRosterError("");
+    setCourseRoster(null);
+    loadCourseRoster(session.courseId, instructorKey).then(rows => {
+      if (!cancelled) setCourseRoster({ courseId: session.courseId, rows });
+    }).catch(error => { if (!cancelled) setRosterError(error.message); });
+    return () => { cancelled = true; };
+  }, [session.courseId, instructorKey, adminUnlocked, isStudentMode]);
+
+  useEffect(() => {
+    if (!session.active || !sessionExpired || isStudentMode || !adminUnlocked) return;
     closeSession(true);
-  }, [session.active, sessionExpired, isStudentMode]);
+  }, [session.active, sessionExpired, isStudentMode, adminUnlocked]);
+
+  async function unlockInstructor() {
+    if (authBusy) return;
+    setAuthBusy(true);
+    setAdminAuthMessage("");
+    try {
+      if (!supabase) throw new Error("The database connection is unavailable.");
+      const { data, error } = await supabase.rpc("verify_instructor_password", { input_password: adminPasswordInput });
+      if (error) throw new Error("Could not verify instructor access. Please try again.");
+      if (data !== true) throw new Error("Incorrect password.");
+      sessionStorage.setItem(instructorAuthStorageKey, adminPasswordInput);
+      setInstructorKey(adminPasswordInput);
+      setAdminUnlocked(true);
+      setAdminPasswordInput("");
+    } catch (error) { setAdminAuthMessage(error instanceof Error ? error.message : "Sign-in failed."); }
+    finally { setAuthBusy(false); }
+  }
+
+  async function exportSession(targetSession = session) {
+    setExportBusy(true);
+    setExportMessage("");
+    try {
+      const reportCourse = courses.find(item => item.id === targetSession.courseId);
+      const reportExercise = exercises.find(item => item.id === targetSession.exerciseId);
+      if (!reportCourse || !reportExercise) throw new Error("This session's course or meeting is unavailable.");
+      if (!supabase) throw new Error("The database connection is unavailable.");
+      const savedSession = await supabase.from("class_sessions").select("id").eq("id", targetSession.id).maybeSingle();
+      if (savedSession.error || !savedSession.data) throw new Error("Select a recorded session before exporting.");
+      const reportRoster = await loadCourseRoster(targetSession.courseId, instructorKey);
+      const freshRows = await loadRemoteSubmissions(targetSession.id, true);
+      await downloadAttendanceWorkbook(reportRoster, freshRows, {
+        sessionId: targetSession.id, courseCode: reportCourse.code, week: reportExercise.week,
+        classMeeting: reportExercise.classMeeting, meetingDate: reportExercise.meetingDate,
+      });
+      setExportMessage("Excel report downloaded.");
+      return true;
+    } catch (error) {
+      setExportMessage(error instanceof Error ? error.message : "The report could not be downloaded.");
+      return false;
+    } finally { setExportBusy(false); }
+  }
 
   async function startSession() {
     const selectedExercise = exercises.find((exercise) => exercise.id === selectedExerciseId);
@@ -703,11 +748,10 @@ export default function Home() {
     if (supabase) {
       await supabase.from("class_sessions").update({ active: false }).eq("id", session.id);
     }
-    if (shouldExport && sessionRows.length) {
+    if (shouldExport) {
       const exportKey = `iona-exported-session-${session.id}`;
       if (!localStorage.getItem(exportKey)) {
-        localStorage.setItem(exportKey, "1");
-        downloadCsv(sessionRows, session);
+        if (await exportSession(closedSession)) localStorage.setItem(exportKey, "1");
       }
     }
   }
@@ -843,31 +887,17 @@ export default function Home() {
               value={adminPasswordInput}
               onChange={(event) => setAdminPasswordInput(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  if (adminPasswordInput === instructorPassword) {
-                    localStorage.setItem(instructorAuthStorageKey, "1");
-                    setAdminUnlocked(true);
-                    setAdminAuthMessage("");
-                  } else {
-                    setAdminAuthMessage("Incorrect password.");
-                  }
-                }
+                if (event.key === "Enter") void unlockInstructor();
               }}
+              autoComplete="current-password"
               placeholder="Password"
             />
             <button
               className="primary-button w-full"
-              onClick={() => {
-                if (adminPasswordInput === instructorPassword) {
-                  localStorage.setItem(instructorAuthStorageKey, "1");
-                  setAdminUnlocked(true);
-                  setAdminAuthMessage("");
-                } else {
-                  setAdminAuthMessage("Incorrect password.");
-                }
-              }}
+              disabled={authBusy}
+              onClick={() => void unlockInstructor()}
             >
-              Unlock instructor view
+              {authBusy ? "Signing in..." : "Unlock instructor view"}
             </button>
             {adminAuthMessage ? <p className="rounded-md bg-[#fff7e3] p-3 text-sm text-[#6f2c3e]">{adminAuthMessage}</p> : null}
           </div>
@@ -900,7 +930,7 @@ export default function Home() {
             </div>
           </div>
           <div className="grid grid-cols-3 gap-2 text-center">
-            <Metric label="Checked in" value={sessionRows.length} />
+            <Metric label="Checked in" value={checkedInCount} />
             <Metric
               label={activeExercise.hasQuestion ? "Answered" : "Expected"}
               value={activeExercise.hasQuestion ? answeredCount : expectedCount}
@@ -927,7 +957,9 @@ export default function Home() {
           <button
             className="view-tab"
             onClick={() => {
-              localStorage.removeItem(instructorAuthStorageKey);
+              sessionStorage.removeItem(instructorAuthStorageKey);
+              setInstructorKey("");
+              setCourseRoster(null);
               setAdminUnlocked(false);
               setAdminPasswordInput("");
             }}
@@ -1037,58 +1069,80 @@ export default function Home() {
         </section>
       ) : (
         <section className="dashboard-layout mx-auto grid max-w-7xl gap-5 px-5 py-5">
-          <Panel title="Live Submissions">
+          <Panel title="Attendance" className="min-w-0">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-[#565a5c]">
                 {session.active ? "Active" : "Closed"}
-                {sessionClosesAt ? ` · Auto closes at ${sessionClosesAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}
+                {sessionClosesAt && Number.isFinite(sessionClosesAt.getTime()) ? ` · Auto closes at ${sessionClosesAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}
               </p>
               <div className="flex flex-wrap gap-2">
-                <button className="secondary-button px-4" onClick={() => closeSession(true)}>
-                  End session & export CSV
+                <button className="secondary-button px-4" disabled={exportBusy || !activeRoster || !hasRecordedSession} onClick={() => closeSession(true)}>
+                  End session & export Excel
                 </button>
-              <button className="secondary-button px-4" onClick={() => downloadCsv(sessionRows, session)}>
-                Export CSV
+              <button className="secondary-button px-4" disabled={exportBusy || !activeRoster || !hasRecordedSession} onClick={() => void exportSession()}>
+                {exportBusy ? "Preparing Excel..." : "Export Excel"}
               </button>
               </div>
             </div>
+            {exportMessage ? <p role="status" className="mb-3 text-sm text-[#6f2c3e]">{exportMessage}</p> : null}
+            {rosterError ? <p role="alert" className="mb-3 text-sm text-[#9c0006]">{rosterError}</p> : null}
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] border-collapse text-sm">
+              <table className="w-full min-w-[1280px] border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-[#e0e1dd] text-left text-[#565a5c]">
+                    <th className="py-2 pr-3">Order</th>
+                    <th className="py-2 pr-3">Student ID</th>
                     <th className="py-2 pr-3">Course</th>
                     <th className="py-2 pr-3">Week / class</th>
                     <th className="py-2 pr-3">Checked in</th>
                     <th className="py-2 pr-3">Username</th>
-                    <th className="py-2 pr-3">Name</th>
+                    <th className="py-2 pr-3">Last name</th>
+                    <th className="py-2 pr-3">First name</th>
+                    <th className="py-2 pr-3">Middle name</th>
                     <th className="py-2 pr-3">Answer</th>
                     <th className="py-2 pr-3">Roster</th>
                     <th className="py-2 pr-3">IP</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sessionRows.map((row) => (
-                    <tr key={row.id} className="border-b border-[#e0e1dd]">
+                  {attendanceReport?.rows.map((row) => (
+                    <tr key={row.student_id} className={`border-b border-[#e0e1dd] ${row.checkedIn ? "" : "bg-[#fce4e4] text-[#9c0006]"}`}>
+                      <td className="py-2 pr-3">{row.roster_order}</td>
+                      <td className="py-2 pr-3">{row.student_id}</td>
                       <td className="py-2 pr-3">{activeCourse.code}</td>
                       <td className="py-2 pr-3">{formatWeekMeeting(activeExercise)}</td>
-                      <td className="py-2 pr-3">{new Date(row.signedAt).toLocaleTimeString()}</td>
-                      <td className="py-2 pr-3">{getUsername(row.email)}</td>
-                      <td className="py-2 pr-3">{row.name}</td>
+                      <td className="py-2 pr-3">{row.checkedIn ? new Date(row.signedAt).toLocaleString("en-US", { timeZone: "America/New_York" }) : "Not checked in"}</td>
+                      <td className="py-2 pr-3">{row.username ?? "Pending"}</td>
+                      <td className="py-2 pr-3">{row.last_name}</td>
+                      <td className="py-2 pr-3">{row.first_name}</td>
+                      <td className="py-2 pr-3">{row.middle_name}</td>
                       <td className="py-2 pr-3">{row.answer}</td>
-                      <td className="py-2 pr-3">{row.matched ? "Matched" : "Review"}</td>
+                      <td className="py-2 pr-3">{row.username ? "Matched" : "Username pending"}</td>
                       <td className="py-2 pr-3 text-[#565a5c]">{row.ipStatus}</td>
                     </tr>
                   ))}
-                  {!sessionRows.length ? (
+                  {!attendanceReport ? (
                     <tr>
-                      <td className="py-8 text-center text-[#565a5c]" colSpan={8}>
-                        Waiting for student scans.
+                      <td className="py-8 text-center text-[#565a5c]" colSpan={12}>
+                        {!hasRecordedSession ? "Choose a session from Session History." : rosterError ? "Roster unavailable." : "Loading course roster..."}
                       </td>
                     </tr>
                   ) : null}
                 </tbody>
               </table>
             </div>
+            {attendanceReport?.unmatched.length ? (
+              <div className="mt-5 border-t border-[#e0e1dd] pt-4">
+                <h3 className="mb-2 font-semibold">Submissions needing review</h3>
+                {attendanceReport.unmatched.map(row => (
+                  <div key={row.id} className="flex flex-wrap gap-x-4 gap-y-1 border-b border-[#e0e1dd] py-2 text-sm">
+                    <span>{row.name}</span><span>{row.email}</span>
+                    <span>{new Date(row.signedAt).toLocaleString("en-US", { timeZone: "America/New_York" })}</span>
+                    <span>{row.answer}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </Panel>
           <div className="space-y-5">
             <Panel title="Session History">
@@ -1138,17 +1192,22 @@ export default function Home() {
             <Panel title="Username Review">
               <div className="space-y-2">
                 {sessionRows.length ? (
-                  sessionRows.map((row) => (
+                  sessionRows.map((row) => {
+                    const student = activeRoster?.find(item => item.username?.toLowerCase() === submissionUsername(row.email));
+                    const matched = activeRoster ? Boolean(student) : row.matched;
+                    const name = student ? [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ") : row.name;
+                    return (
                     <div key={row.id} className="flex items-center justify-between rounded-md bg-white p-3 text-sm">
                       <div>
-                        <p className="font-medium">{row.name}</p>
+                        <p className="font-medium">{name}</p>
                         <p className="text-[#565a5c]">
                           {getUsername(row.email)} · {row.email}
                         </p>
                       </div>
-                      <span className={row.matched ? "mini-pill ok" : "mini-pill"}>{row.matched ? "Matched" : "Review"}</span>
+                      <span className={matched ? "mini-pill ok" : "mini-pill"}>{matched ? "Matched" : "Review"}</span>
                     </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <p className="rounded-md bg-white p-3 text-sm text-[#565a5c]">Waiting for student scans.</p>
                 )}
