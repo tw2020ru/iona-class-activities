@@ -11,10 +11,12 @@
     "start": "vite preview --host 0.0.0.0",
     "test": "npm run build",
     "test:attendance": "node --experimental-strip-types --test tests/attendance-report.test.mjs",
+    "test:schedule": "node --experimental-strip-types --test tests/class-schedule.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@date-fns/tz": "^1.5.0",
     "@supabase/supabase-js": "^2.109.0",
     "drizzle-orm": "0.45.2",
     "exceljs": "^4.4.0",

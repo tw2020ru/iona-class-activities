@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { buildAttendanceRows, downloadAttendanceWorkbook, submissionUsername, type RosterEntry } from "./attendance-report";
+import { courseTimeZone, findSessionToRestore, getMeetingWindow, isWithinMeetingWindow, selectDefaultMeeting } from "./class-schedule";
 
 type Course = {
   id: string;
@@ -214,8 +215,8 @@ const courseMeetingPatterns = [
 ];
 
 function addWeeks(dateKey: string, weeks: number) {
-  const date = new Date(`${dateKey}T12:00:00`);
-  date.setDate(date.getDate() + weeks * 7);
+  const date = new Date(`${dateKey}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + weeks * 7);
   return date.toISOString().slice(0, 10);
 }
 
@@ -224,18 +225,7 @@ function formatShortDate(dateKey: string) {
     month: "short",
     day: "numeric",
     timeZone: "America/New_York",
-  }).format(new Date(`${dateKey}T12:00:00`));
-}
-
-function getNewYorkDateKey(date: Date) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    timeZone: "America/New_York",
-  }).formatToParts(date);
-  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
-  return `${value("year")}-${value("month")}-${value("day")}`;
+  }).format(new Date(`${dateKey}T12:00:00Z`));
 }
 
 const exercises: Exercise[] = courseMeetingPatterns
@@ -275,16 +265,13 @@ function getCourseExercises(courseId: string) {
 
 function getDefaultExerciseId(courseId: string, date = new Date()) {
   const courseExercises = getCourseExercises(courseId);
-  const today = getNewYorkDateKey(date);
-  return courseExercises.find((exercise) => exercise.meetingDate >= today)?.id ?? courseExercises.at(-1)?.id ?? exercises[0].id;
+  return selectDefaultMeeting(courseExercises, date.getTime())?.id ?? exercises[0].id;
 }
 
 const emailPattern = /^[^\s@]+@[^@\s]+\.[^@\s]+$/i;
 const usernamePattern = /^[a-z0-9._-]+$/i;
 const tickMs = 45_000;
 const tokenGraceMs = 75_000;
-const sessionReuseBeforeStartMs = 15 * 60 * 1000;
-const sessionCloseAfterEndMs = 15 * 60 * 1000;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
@@ -416,9 +403,8 @@ function formatWeekMeeting(exercise?: Exercise) {
 }
 
 function getExerciseCloseTime(exercise?: Exercise) {
-  if (!exercise) return null;
-  const endsAt = new Date(`${exercise.meetingDate}T${exercise.endsAt}:00`);
-  return new Date(endsAt.getTime() + sessionCloseAfterEndMs);
+  const window = getMeetingWindow(exercise);
+  return window ? new Date(window.closesAt) : null;
 }
 
 function isPastExerciseCloseTime(exercise: Exercise | undefined, nowMs = Date.now()) {
@@ -427,11 +413,15 @@ function isPastExerciseCloseTime(exercise: Exercise | undefined, nowMs = Date.no
 }
 
 function isWithinSessionReuseWindow(exercise: Exercise | undefined, nowMs = Date.now()) {
-  if (!exercise) return false;
-  const startsAt = new Date(`${exercise.meetingDate}T${exercise.startsAt}:00`).getTime();
-  const closesAt = getExerciseCloseTime(exercise)?.getTime();
-  if (!closesAt) return false;
-  return nowMs >= startsAt - sessionReuseBeforeStartMs && nowMs <= closesAt;
+  return isWithinMeetingWindow(exercise, nowMs);
+}
+
+function createDraftSession(exercise: Exercise): Session {
+  return {
+    id: crypto.randomUUID(), courseId: exercise.courseId, exerciseId: exercise.id,
+    label: new Date().toLocaleDateString("en-US", { timeZone: courseTimeZone, month: "short", day: "numeric", year: "numeric" }),
+    active: false, tokenSeed: crypto.randomUUID(), startedAt: new Date().toISOString(),
+  };
 }
 
 async function matchRosterUsername(username: string, courseId: string) {
@@ -472,22 +462,13 @@ async function loadCourseRoster(courseId: string, password: string): Promise<Ros
 }
 
 export default function Home() {
-  const [selectedCourseId, setSelectedCourseId] = useState(courses[0].id);
-  const [selectedExerciseId, setSelectedExerciseId] = useState(() => getDefaultExerciseId(courses[0].id));
+  const [initialMeeting] = useState(() => selectDefaultMeeting(exercises) ?? exercises[0]);
+  const [selectedCourseId, setSelectedCourseId] = useState(initialMeeting.courseId);
+  const [selectedExerciseId, setSelectedExerciseId] = useState(initialMeeting.id);
   const [view, setView] = useState<"console" | "projection" | "backend">("console");
-  const [session, setSession] = useState<Session>(() => ({
-    id: crypto.randomUUID(),
-    courseId: courses[0].id,
-    exerciseId: getDefaultExerciseId(courses[0].id),
-    label: new Date().toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }),
-    active: true,
-    tokenSeed: crypto.randomUUID(),
-    startedAt: new Date().toISOString(),
-  }));
+  const [session, setSession] = useState<Session>(() => createDraftSession(initialMeeting));
+  const [autoCloseSessionId, setAutoCloseSessionId] = useState<string | null>(null);
+  const selectionRevision = useRef(0);
   const [now, setNow] = useState(Date.now());
   const [email, setEmail] = useState("");
   const [emailDomain, setEmailDomain] = useState("gaels.iona.edu");
@@ -546,11 +527,6 @@ export default function Home() {
             setView("projection");
           }
         });
-    } else {
-      const storedSession = loadStoredInstructorSession();
-      if (storedSession) {
-        setSession(storedSession);
-      }
     }
     const channel = supabase
       ?.channel("classroom-activity")
@@ -600,6 +576,32 @@ export default function Home() {
   const sessionExpired = isPastExerciseCloseTime(activeExercise, now);
 
   useEffect(() => {
+    if (!adminUnlocked || isStudentMode || new URLSearchParams(window.location.search).has("session")) return;
+    const loginTime = Date.now();
+    const meeting = selectDefaultMeeting(exercises, loginTime) ?? exercises[0];
+    const revision = ++selectionRevision.current;
+    let cancelled = false;
+    setSelectedCourseId(meeting.courseId);
+    setSelectedExerciseId(meeting.id);
+    setSession(createDraftSession(meeting));
+    setAutoCloseSessionId(null);
+    setView("console");
+    if (isWithinMeetingWindow(meeting, loginTime)) {
+      const storedId = loadStoredInstructorSession()?.id;
+      loadRemoteSessions().then(items => {
+        // A late request must not undo a manual choice, Start, or history navigation.
+        if (cancelled || selectionRevision.current !== revision) return;
+        const restored = findSessionToRestore(items, meeting, Date.now(), storedId);
+        if (!restored) return;
+        setSession(restored);
+        setAutoCloseSessionId(restored.id);
+        saveStoredInstructorSession(restored);
+      });
+    }
+    return () => { cancelled = true; };
+  }, [adminUnlocked, isStudentMode]);
+
+  useEffect(() => {
     if (isStudentMode || !adminUnlocked || !instructorKey) return;
     let cancelled = false;
     setRosterError("");
@@ -611,9 +613,9 @@ export default function Home() {
   }, [session.courseId, instructorKey, adminUnlocked, isStudentMode]);
 
   useEffect(() => {
-    if (!session.active || !sessionExpired || isStudentMode || !adminUnlocked) return;
+    if (autoCloseSessionId !== session.id || !session.active || !sessionExpired || isStudentMode || !adminUnlocked) return;
     closeSession(true);
-  }, [session.active, sessionExpired, isStudentMode, adminUnlocked]);
+  }, [autoCloseSessionId, session.id, session.active, sessionExpired, isStudentMode, adminUnlocked]);
 
   async function unlockInstructor() {
     if (authBusy) return;
@@ -657,14 +659,12 @@ export default function Home() {
   }
 
   async function startSession() {
+    selectionRevision.current += 1;
     const selectedExercise = exercises.find((exercise) => exercise.id === selectedExerciseId);
-    let reusableSession = sessions.find(
-      (item) =>
-        item.courseId === selectedCourseId &&
-        item.exerciseId === selectedExerciseId &&
-        isWithinSessionReuseWindow(selectedExercise, now),
-    );
-    if (!reusableSession && supabase && isWithinSessionReuseWindow(selectedExercise, now)) {
+    const canReuse = isWithinSessionReuseWindow(selectedExercise, Date.now());
+    const candidates = sessions.filter(item => item.courseId === selectedCourseId && item.exerciseId === selectedExerciseId);
+    let reusableSession = canReuse ? candidates.find(item => item.id === session.id) ?? candidates[0] : undefined;
+    if (!reusableSession && supabase && canReuse) {
       const { data } = await supabase
         .from("class_sessions")
         .select("id, course_id, exercise_id, label, active, token_seed, started_at")
@@ -688,6 +688,7 @@ export default function Home() {
     if (reusableSession) {
       const resumedSession = { ...reusableSession, active: true };
       setSession(resumedSession);
+      setAutoCloseSessionId(resumedSession.id);
       setSessions((items) => [resumedSession, ...items.filter((item) => item.id !== resumedSession.id)]);
       saveStoredInstructorSession(resumedSession);
       if (supabase && !reusableSession.active) {
@@ -715,6 +716,7 @@ export default function Home() {
       startedAt: new Date().toISOString(),
     };
     setSession(nextSession);
+    setAutoCloseSessionId(nextSession.id);
     setSessions((items) => [nextSession, ...items.filter((item) => item.id !== nextSession.id)]);
     saveStoredInstructorSession(nextSession);
     if (supabase) {
@@ -735,12 +737,18 @@ export default function Home() {
   }
 
   function openHistoricalSession(targetSession: Session) {
+    selectionRevision.current += 1;
+    setSelectedCourseId(targetSession.courseId);
+    setSelectedExerciseId(targetSession.exerciseId);
+    setAutoCloseSessionId(null);
     setSession(targetSession);
     saveStoredInstructorSession(targetSession);
     setView("backend");
   }
 
   async function closeSession(shouldExport = false) {
+    selectionRevision.current += 1;
+    setAutoCloseSessionId(null);
     const closedSession = { ...session, active: false };
     setSession(closedSession);
     setSessions((items) => items.map((item) => (item.id === closedSession.id ? closedSession : item)));
@@ -990,6 +998,7 @@ export default function Home() {
                       className="field"
                       value={selectedCourseId}
                       onChange={(event) => {
+                        selectionRevision.current += 1;
                         const nextCourseId = event.target.value;
                         setSelectedCourseId(nextCourseId);
                         setSelectedExerciseId(getDefaultExerciseId(nextCourseId));
@@ -1007,7 +1016,10 @@ export default function Home() {
                     <select
                       className="field"
                       value={selectedExerciseId}
-                      onChange={(event) => setSelectedExerciseId(event.target.value)}
+                      onChange={(event) => {
+                        selectionRevision.current += 1;
+                        setSelectedExerciseId(event.target.value);
+                      }}
                     >
                       {selectedCourseExercises.map((exercise) => (
                         <option key={exercise.id} value={exercise.id}>
